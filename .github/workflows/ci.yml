@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  core:
+    name: Rust core (fmt, clippy, test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: core
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+      - run: cargo fmt --check
+      - run: cargo clippy -- -D warnings
+      - run: cargo test
+
+  desktop:
+    name: Desktop typecheck
+    runs-on: ubuntu-latest
+    if: hashFiles('desktop/package.json') != ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci || pnpm install --frozen-lockfile
+        working-directory: desktop
+      - run: npx tsc --noEmit
+        working-directory: desktop
+
+  release:
+    name: Release artifacts
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [core]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # tauri-action lands here when desktop/ is scaffolded
+      - name: Placeholder (desktop not scaffolded yet)
+        run: echo "release job activates when desktop/ exists"
