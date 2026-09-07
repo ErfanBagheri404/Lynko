@@ -1,1 +1,1 @@
-{}
+{"default":{"identifier":"default","description":"Lynko main window capabilities","local":true,"windows":["main"],"permissions":["core:default","clipboard-manager:allow-write-text","clipboard-manager:allow-read-text","notification:default","dialog:allow-open","dialog:allow-save"]}}
