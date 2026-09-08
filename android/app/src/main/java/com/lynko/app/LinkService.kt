@@ -37,6 +37,7 @@ class LinkService : Service() {
     private lateinit var pairingServer: PairingServer
     private var linkServer: LinkServer? = null
     private val screenSession = AtomicReference<ScreenSession?>(null)
+    private val audioSession = AtomicReference<AudioSession?>(null)
 
     override fun onCreate() {
         super.onCreate()
@@ -84,7 +85,7 @@ class LinkService : Service() {
             serviceType = "_lynko._tcp."
             port = LINK_PORT
             setAttribute("v", "1")
-            setAttribute("caps", "screen,audio,input,clip,files,notif,battery")
+            setAttribute("caps", "screen,audio,input,text,clip,files,notif,batt")
             setAttribute("pin", "1234") // first-run PIN; UI shows the same
         }
         try {
@@ -235,8 +236,11 @@ class LinkService : Service() {
                 ClipboardBridge.write(applicationContext, text)
                 sendEvent(conn, "log", JSONObject().put("msg", "clipboard written"))
             }
-            "start_audio", "stop_audio" ->
-                sendEvent(conn, "log", JSONObject().put("msg", "audio not implemented on phone yet"))
+            "start_audio" -> startAudioCapture(conn)
+            "stop_audio" -> {
+                audioSession.getAndSet(null)?.stop()
+                sendEvent(conn, "log", JSONObject().put("msg", "audio stopped"))
+            }
             else -> sendEvent(conn, "log", JSONObject().put("msg", "unknown command: $t"))
         }
     }
@@ -267,11 +271,36 @@ class LinkService : Service() {
         sendEvent(conn, "log", JSONObject().put("msg", "screen streaming"))
     }
 
+    private fun startAudioCapture(conn: WebSocket) {
+        val resultData = ScreenPermission.resultData
+        if (resultData == null) {
+            sendEvent(conn, "log", JSONObject().put("msg", "screen permission required for audio capture"))
+            return
+        }
+        if (android.os.Build.VERSION.SDK_INT < 29) {
+            sendEvent(conn, "log", JSONObject().put("msg", "audio capture needs Android 10+"))
+            return
+        }
+        val old = audioSession.getAndSet(null)
+        old?.stop()
+        val mpm = getSystemService(android.media.projection.MediaProjectionManager::class.java)
+        val projection = mpm.getMediaProjection(ScreenPermission.resultCode, resultData)
+        val session = AudioSession(
+            projection,
+            broadcast = { ws, s -> ws.send(s) },
+            getConns = { linkServer?.getConnections()?.toList() ?: emptyList() },
+        )
+        session.start()
+        audioSession.set(session)
+        sendEvent(conn, "log", JSONObject().put("msg", "audio streaming"))
+    }
+
     override fun onDestroy() {
         running = false
         pairingServer.stop()
         linkServer?.stop()
         screenSession.getAndSet(null)?.stop()
+        audioSession.getAndSet(null)?.stop()
         super.onDestroy()
     }
 

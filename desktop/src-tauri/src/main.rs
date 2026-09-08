@@ -299,14 +299,25 @@ async fn run_link(
                         let _ = app.emit("file_chunk", serde_json::json!({ "id": &id, "len": data.len() }));
                     }
                     _ => {
-                        // Screen frame (b"LV1" + raw JPEG bytes) or unknown binary.
-                        // Forward the raw JPEG to the frontend canvas.
+                        // Screen frame (b"LV1" + raw JPEG bytes): forward JPEG to canvas.
                         if bin.len() > 3 && &bin[..3] == lynko_core::FRAME_MAGIC {
                             use base64::Engine;
                             use tauri::Manager;
                             if let Some(win) = app.get_webview_window("main") {
                                 let _ = win.emit("screen_frame", serde_json::json!({
                                     "jpeg": base64::engine::general_purpose::STANDARD.encode(&bin[3..]),
+                                }));
+                            }
+                        }
+                        // Audio chunk (b"LF1" + header + PCM i16 LE): forward PCM to player.
+                        if let Some((rate, chans, count, samples)) = lynko_core::parse_audio_chunk(&bin) {
+                            use tauri::Manager;
+                            if let Some(win) = app.get_webview_window("main") {
+                                let _ = win.emit("audio_chunk", serde_json::json!({
+                                    "rate": rate,
+                                    "chans": chans,
+                                    "count": count,
+                                    "pcm": samples,
                                 }));
                             }
                         }

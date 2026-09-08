@@ -700,17 +700,81 @@ function NotificationsView(props: ShellProps) {
 /* ------------------------------------------------------------------ */
 
 function AudioView(props: ShellProps) {
-  const { link } = props;
+  const { link, toast } = props;
+  const [playing, setPlaying] = useState(false);
+  const [chunks, setChunks] = useState(0);
+  const ctxRef = useRef<AudioContext | null>(null);
+  const queueRef = useRef<{ rate: number; chans: number; pcm: Int16Array }[]>([]);
+  const playHeadRef = useRef(0);
+
+  useEffect(() => {
+    let un: (() => void) | undefined;
+    api.on<{ rate: number; chans: number; count: number; pcm: number[] }>("audio_chunk", (e) => {
+      const { rate, chans, pcm } = e.payload;
+      const arr = Int16Array.from(pcm);
+      if (!arr.length) return;
+      queueRef.current.push({ rate, chans, pcm: arr });
+      setChunks((c) => c + 1);
+    }).then((u) => { un = u; });
+    return () => un?.();
+  }, []);
+
+  // schedule queued PCM as it arrives while playing
+  useEffect(() => {
+    if (!playing) return;
+    const tick = setInterval(() => {
+      const ctx = ctxRef.current;
+      if (!ctx) return;
+      while (queueRef.current.length) {
+        const item = queueRef.current.shift()!;
+        const when = Math.max(ctx.currentTime + 0.02, playHeadRef.current);
+        const buf = ctx.createBuffer(1, item.pcm.length, item.rate);
+        const data = buf.getChannelData(0);
+        for (let i = 0; i < item.pcm.length; i++) data[i] = item.pcm[i] / 32768;
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        src.connect(ctx.destination);
+        src.start(when);
+        playHeadRef.current = when + item.pcm.length / item.rate;
+      }
+    }, 100);
+    return () => clearInterval(tick);
+  }, [playing]);
+
+  const start = async () => {
+    try {
+      if (!ctxRef.current) ctxRef.current = new AudioContext();
+      await ctxRef.current.resume();
+      playHeadRef.current = 0;
+      await api.invoke("audio_start");
+      setPlaying(true);
+      toast("Audio streaming to desktop speakers", "ok");
+    } catch (e) { toast(`Audio failed: ${e}`, "err"); }
+  };
+
+  const stop = async () => {
+    try {
+      await api.invoke("audio_stop");
+      setPlaying(false);
+      queueRef.current = [];
+      playHeadRef.current = 0;
+      toast("Audio stopped", "info");
+    } catch (e) { toast(`Stop failed: ${e}`, "err"); }
+  };
+
   return (
     <div className="view">
       <PageHead title="Phone audio" sub="Route phone audio through desktop speakers." />
       <div className="card">
         <h2>Output</h2>
         <p className="desc">Media, calls, system sounds play on this PC.</p>
-        <div className="screen-bar"><span>{link.connected ? "AudioPlaybackCapture · Opus" : "idle"}</span></div>
+        <div className="screen-bar">
+          <span>{playing ? `${chunks} chunks · 16 kHz mono PCM` : link.connected ? "ready" : "idle"}</span>
+        </div>
         <div className="card-actions">
-          <button className="btn ghost sm" disabled={!link.connected}>Mute phone</button>
-          <button className="btn ghost sm" disabled={!link.connected}>Play on phone</button>
+          {!playing
+            ? <button className="btn primary sm" disabled={!link.connected} onClick={start}>Start audio</button>
+            : <button className="btn sm" onClick={stop}>Stop</button>}
         </div>
       </div>
     </div>

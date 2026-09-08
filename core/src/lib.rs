@@ -172,6 +172,26 @@ pub fn decode_frame(frame: &[u8]) -> DecodedFrame {
     DecodedFrame::Text
 }
 
+/// Audio chunk header after the `b"LF1"` magic (phone -> desktop):
+/// u16 LE sample rate, u16 LE channels, u32 LE sample count, then PCM i16 LE.
+pub fn parse_audio_chunk(bin: &[u8]) -> Option<(u16, u16, u32, Vec<i16>)> {
+    if bin.len() < 3 + 8 || &bin[..3] != CHUNK_MAGIC {
+        return None;
+    }
+    let rate = u16::from_le_bytes([bin[3], bin[4]]);
+    let chans = u16::from_le_bytes([bin[5], bin[6]]);
+    let count = u32::from_le_bytes([bin[7], bin[8], bin[9], bin[10]]) as usize;
+    let bytes = &bin[11..];
+    if bytes.len() < count * 2 || rate == 0 || chans == 0 {
+        return None;
+    }
+    let samples: Vec<i16> = bytes[..count * 2]
+        .chunks_exact(2)
+        .map(|c| i16::from_le_bytes([c[0], c[1]]))
+        .collect();
+    Some((rate, chans, count as u32, samples))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
