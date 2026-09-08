@@ -1,40 +1,96 @@
 package com.lynko.app
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
+import android.view.View
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
-import android.content.Intent
-import android.os.Build
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
-import android.Manifest
-import android.content.pm.PackageManager
 
+/**
+ * Lynko phone UI: brand, live status card, required-permissions checklist,
+ * start/stop, pairing PIN.
+ */
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var statusText: TextView
+    private lateinit var statusDot: View
+    private lateinit var statusTitle: TextView
+    private lateinit var statusSub: TextView
     private lateinit var startBtn: Button
+    private lateinit var pinText: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        statusText = findViewById(R.id.statusText)
+        statusDot = findViewById(R.id.statusDot)
+        statusTitle = findViewById(R.id.statusTitle)
+        statusSub = findViewById(R.id.statusSub)
         startBtn = findViewById(R.id.startBtn)
+        pinText = findViewById(R.id.pinText)
 
-        statusText.text = "Not running"
+        renderState()
 
         startBtn.setOnClickListener {
-            // Ask notification permission (Android 13+)
-            if (Build.VERSION.SDK_INT >= 33) {
-                ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 101)
+            if (LinkService.running) {
+                stopLink()
+            } else {
+                beginStart()
             }
+        }
+    }
 
-            // MediaProjection consent FIRST — the link service needs the
-            // projection app-op before it may start an FGS of that type (API 34+).
-            ScreenPermission.request(this)
-            statusText.text = "Waiting for screen consent…"
+    override fun onResume() {
+        super.onResume()
+        renderState()
+    }
+
+    private fun beginStart() {
+        // Notification permission first (Android 13+)
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 101)
+        }
+        // MediaProjection consent must precede the FGS of that type (API 34+)
+        statusTitle.text = "Waiting for screen consent…"
+        statusSub.text = "Accept the screen-share prompt so the desktop can mirror this phone."
+        ScreenPermission.request(this)
+    }
+
+    private fun startLinkService() {
+        val svcIntent = Intent(this, LinkService::class.java)
+        if (Build.VERSION.SDK_INT >= 26) startForegroundService(svcIntent)
+        else startService(svcIntent)
+        renderState()
+    }
+
+    private fun stopLink() {
+        stopService(Intent(this, LinkService::class.java))
+        renderState()
+        Toast.makeText(this, "Lynko stopped", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun renderState() {
+        if (LinkService.running) {
+            statusDot.setBackgroundResource(R.drawable.dot_live)
+            statusTitle.text = "Live — waiting for your desktop"
+            statusSub.text = "Advertising ${android.os.Build.MODEL} on your local network. Pair from the desktop app with PIN 1234."
+            startBtn.text = "Stop Lynko"
+            pinText.visibility = View.VISIBLE
+            pinText.text = "Pairing PIN  1234"
+        } else {
+            statusDot.setBackgroundResource(R.drawable.dot_idle)
+            statusTitle.text = "Not running"
+            statusSub.text = "Tap Start to advertise on your Wi-Fi and accept a desktop pair request."
+            startBtn.text = "Start Lynko"
+            startBtn.isEnabled = true
+            pinText.visibility = View.GONE
         }
     }
 
@@ -42,31 +98,20 @@ class MainActivity : AppCompatActivity() {
         super.onActivityResult(requestCode, resultCode, data)
         ScreenPermission.onResult(requestCode, resultCode, data)
         if (requestCode == 9001) {
-            if (ScreenPermission.isGranted) {
-                startLinkService()
-            } else {
-                statusText.text = "Screen permission denied — link not started"
+            if (ScreenPermission.isGranted) startLinkService()
+            else {
+                statusTitle.text = "Screen permission denied"
+                statusSub.text = "Mirroring needs screen-share consent. Tap Start to try again."
             }
         }
-    }
-
-    private fun startLinkService() {
-        val svcIntent = Intent(this, LinkService::class.java)
-        if (Build.VERSION.SDK_INT >= 26) {
-            startForegroundService(svcIntent)
-        } else {
-            startService(svcIntent)
-        }
-        statusText.text = "Running — waiting for your desktop…"
-        startBtn.isEnabled = false
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == 101) {
-            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                Toast.makeText(this, "Notifications enabled", Toast.LENGTH_SHORT).show()
-            }
+        if (requestCode == 101 &&
+            (grantResults.isEmpty() || grantResults[0] != PackageManager.PERMISSION_GRANTED)
+        ) {
+            Toast.makeText(this, "Notifications blocked — link continues without them", Toast.LENGTH_LONG).show()
         }
     }
 }

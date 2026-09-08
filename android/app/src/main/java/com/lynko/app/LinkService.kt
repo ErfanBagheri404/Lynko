@@ -28,6 +28,10 @@ class LinkService : Service() {
         const val PAIR_PORT = 7912
         const val LINK_PORT = 7913
         const val CHANNEL_ID = "lynko_link"
+
+        @Volatile
+        var running: Boolean = false
+            private set
     }
 
     private lateinit var pairingServer: PairingServer
@@ -37,6 +41,7 @@ class LinkService : Service() {
     override fun onCreate() {
         super.onCreate()
         startForeground()
+        running = true
         pairingServer = PairingServer(PAIR_PORT)
         pairingServer.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
         linkServer = LinkServer(LINK_PORT).also { it.start() }
@@ -250,6 +255,7 @@ class LinkService : Service() {
     }
 
     override fun onDestroy() {
+        running = false
         pairingServer.stop()
         linkServer?.stop()
         screenSession.getAndSet(null)?.stop()

@@ -1,36 +1,203 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="#16181a"
-    android:padding="32dp"
-    android:gravity="center">
+    android:background="#16181A"
+    android:fillViewport="true">
 
-    <TextView
-        android:layout_width="wrap_content"
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="lynko"
-        android:textColor="#FFB454"
-        android:textSize="28sp"
-        android:textStyle="bold"
-        android:layout_marginBottom="16dp" />
+        android:orientation="vertical"
+        android:padding="24dp">
 
-    <TextView
-        android:id="@+id/statusText"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Tap to start"
-        android:textColor="#9BA0A6"
-        android:textSize="14sp"
-        android:layout_marginBottom="24dp" />
+        <!-- brand mark -->
+        <TextView
+            android:id="@+id/brandText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="48dp"
+            android:text="lynko"
+            android:textColor="#FFB454"
+            android:fontFamily="@font/schibsted"
+            android:textSize="32sp"
+            android:textStyle="bold"
+            android:letterSpacing="-0.03" />
 
-    <Button
-        android:id="@+id/startBtn"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Start Lynko"
-        android:textColor="#1A1006"
-        android:backgroundTint="#FFB454" />
+        <TextView
+            android:id="@+id/tagline"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="your phone, on your desktop"
+            android:textColor="#9BA0A6"
+            android:fontFamily="@font/schibsted"
+            android:textSize="14sp" />
 
-</LinearLayout>
+        <!-- status card -->
+        <LinearLayout
+            android:id="@+id/statusCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="32dp"
+            android:orientation="vertical"
+            android:background="@drawable/status_card"
+            android:padding="20dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <View
+                    android:id="@+id/statusDot"
+                    android:layout_width="10dp"
+                    android:layout_height="10dp"
+                    android:background="@drawable/dot_idle" />
+
+                <TextView
+                    android:id="@+id/statusTitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:text="Not running"
+                    android:textColor="#E8EAED"
+                    android:fontFamily="@font/schibsted"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/statusSub"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="Tap Start to advertise on your Wi-Fi and accept a desktop pair request."
+                android:textColor="#9BA0A6"
+                android:fontFamily="@font/schibsted"
+                android:textSize="13sp"
+                android:lineSpacingExtra="3dp" />
+        </LinearLayout>
+
+        <!-- permissions checklist -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="28dp"
+            android:text="Requires"
+            android:textColor="#6C7178"
+            android:fontFamily="@font/schibsted"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.08" />
+
+        <LinearLayout
+            android:id="@+id/permScreen"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/permScreenIcon"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:gravity="center"
+                android:text="•"
+                android:textColor="#FFB454"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/permScreenText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:text="Screen capture consent — for mirroring"
+                android:textColor="#9BA0A6"
+                android:fontFamily="@font/schibsted"
+                android:textSize="14sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:gravity="center"
+                android:text="•"
+                android:textColor="#FFB454"
+                android:textSize="16sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:text="Accessibility service — for remote taps and swipes"
+                android:textColor="#9BA0A6"
+                android:fontFamily="@font/schibsted"
+                android:textSize="14sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:gravity="center"
+                android:text="•"
+                android:textColor="#FFB454"
+                android:textSize="16sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:text="Notification access — to forward notifications"
+                android:textColor="#9BA0A6"
+                android:fontFamily="@font/schibsted"
+                android:textSize="14sp" />
+        </LinearLayout>
+
+        <!-- start button -->
+        <Button
+            android:id="@+id/startBtn"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:layout_marginTop="36dp"
+            android:text="Start Lynko"
+            android:textColor="#1A1006"
+            android:fontFamily="@font/schibsted"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:background="@drawable/btn_amber"
+            android:stateListAnimator="@null" />
+
+        <TextView
+            android:id="@+id/pinText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:gravity="center"
+            android:text=""
+            android:textColor="#9BA0A6"
+            android:fontFamily="@font/schibsted"
+            android:textSize="13sp"
+            android:visibility="gone" />
+
+        <Space
+            android:layout_width="match_parent"
+            android:layout_height="48dp" />
+    </LinearLayout>
+</ScrollView>
