@@ -214,8 +214,21 @@ class LinkService : Service() {
                     sendEvent(conn, "log", JSONObject().put("msg", "swipe received"))
                 }
             }
-            "key" -> sendEvent(conn, "log", JSONObject().put("msg", "key received (unimplemented)"))
-            "text" -> sendEvent(conn, "log", JSONObject().put("msg", "text received (unimplemented)"))
+            "key" -> {
+                val name = (d as? JSONObject)?.optString("name") ?: ""
+                // Nav keys: accessibility global action. Everything else: IME.
+                if (InputInjector.navKey(name)) {
+                    sendEvent(conn, "log", JSONObject().put("msg", "nav: $name"))
+                } else {
+                    ImeBridge.pushKey(name)
+                    sendEvent(conn, "log", JSONObject().put("msg", "key: $name"))
+                }
+            }
+            "text" -> {
+                val text = (d as? JSONObject)?.optString("text") ?: ""
+                ImeBridge.pushText(text)
+                sendEvent(conn, "log", JSONObject().put("msg", "text (${text.length} chars)"))
+            }
             "copy" -> sendEvent(conn, "clipboard", JSONObject().put("text", ClipboardBridge.read(applicationContext)))
             "paste" -> {
                 val text = (d as? JSONObject)?.optString("text") ?: ""

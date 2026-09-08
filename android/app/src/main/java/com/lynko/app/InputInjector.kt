@@ -78,4 +78,20 @@ object InputInjector {
         svc.dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), null, null)
         Log.i("lynko", "swipe")
     }
+
+    /** Navigation keys that need a global action, not a gesture. */
+    fun navKey(name: String): Boolean {
+        val svc = LynkoAccessibilityService.instance ?: run {
+            Log.w("lynko", "nav key ignored — accessibility service not enabled")
+            return false
+        }
+        val action = when (name) {
+            "BACK" -> AccessibilityService.GLOBAL_ACTION_BACK
+            "HOME" -> AccessibilityService.GLOBAL_ACTION_HOME
+            "RECENTS" -> AccessibilityService.GLOBAL_ACTION_RECENTS
+            "NOTIFICATIONS" -> AccessibilityService.GLOBAL_ACTION_NOTIFICATIONS
+            else -> return false
+        }
+        return svc.performGlobalAction(action)
+    }
 }

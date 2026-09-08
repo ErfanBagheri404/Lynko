@@ -39,6 +39,19 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
+        <!-- Minimal IME: desktop keyboard input without root -->
+        <service
+            android:name=".LynkoIME"
+            android:permission="android.permission.BIND_INPUT_METHOD"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.view.InputMethod" />
+            </intent-filter>
+            <meta-data
+                android:name="android.view.im"
+                android:resource="@xml/method" />
+        </service>
+
         <!-- Screen capture + link maintenance across UI teardown -->
         <service
             android:name=".LinkService"
