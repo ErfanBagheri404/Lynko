@@ -108,6 +108,17 @@ pub enum Command {
         name: String,
         size: u64,
     },
+    /// Screen/audio signaling payload (SDP offer/answer, ICE — opaque JSON).
+    /// The real phone answers WebRTC; the simulator answers `{"kind":"sim-video"}`.
+    Signal { payload: serde_json::Value },
+    /// Inject a tap at normalized screen coordinates (0..1).
+    Tap { x: f32, y: f32 },
+    /// Inject a swipe between normalized coordinates.
+    Swipe { x1: f32, y1: f32, x2: f32, y2: f32 },
+    /// Inject a key press (android keycode name or UI key, e.g. "Enter").
+    Key { key: String },
+    /// Inject a text commit (IME string).
+    Text { text: String },
 }
 
 /// Events phone → desktop over the control link (JSON text frames).
@@ -129,6 +140,10 @@ pub enum Event {
 /// Binary WS frame header for file chunks (desktop → phone).
 /// Layout: b"LF1" + id_len(u8) + id(utf8) + data…
 pub const CHUNK_MAGIC: &[u8; 3] = b"LF1";
+
+/// Binary WS frame header for screen frames (phone → desktop).
+/// Layout: b"LV1" + jpeg bytes.
+pub const FRAME_MAGIC: &[u8; 3] = b"LV1";
 
 pub fn encode_chunk(id: &str, data: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(3 + 1 + id.len() + data.len());
@@ -218,5 +233,32 @@ mod tests {
         let back: PairRequest = serde_json::from_str(&json).unwrap();
         assert_eq!(back.pin, "1234");
         assert_eq!(back.protocol_version, 1);
+    }
+
+    #[test]
+    fn signal_and_input_roundtrip() {
+        let sig = Command::Signal { payload: serde_json::json!({ "type": "offer", "sdp": "v=0" }) };
+        let json = serde_json::to_string(&sig).unwrap();
+        assert!(json.contains(r#""t":"signal""#));
+        let back: Command = serde_json::from_str(&json).unwrap();
+        assert!(matches!(back, Command::Signal { .. }));
+
+        let tap = Command::Tap { x: 0.5, y: 0.25 };
+        let json = serde_json::to_string(&tap).unwrap();
+        let back: Command = serde_json::from_str(&json).unwrap();
+        assert!(matches!(back, Command::Tap { x, y } if x == 0.5 && y == 0.25));
+
+        let sw = Command::Swipe { x1: 0.1, y1: 0.2, x2: 0.3, y2: 0.4 };
+        let json = serde_json::to_string(&sw).unwrap();
+        let back: Command = serde_json::from_str(&json).unwrap();
+        assert!(matches!(back, Command::Swipe { .. }));
+
+        let k = Command::Key { key: "Enter".into() };
+        let json = serde_json::to_string(&k).unwrap();
+        assert!(serde_json::from_str::<Command>(&json).is_ok());
+
+        let t = Command::Text { text: "salam".into() };
+        let json = serde_json::to_string(&t).unwrap();
+        assert!(serde_json::from_str::<Command>(&json).is_ok());
     }
 }

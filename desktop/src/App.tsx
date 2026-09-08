@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   IconAudio, IconBattery, IconClip, IconDevices, IconFiles, IconNotes,
   IconRefresh, IconScreen, IconSend, IconSettings, Mark,
@@ -408,7 +408,87 @@ function DevicesView({ devices, link, toast }: ShellProps) {
 /* ------------------------------------------------------------------ */
 
 function ScreenView(props: ShellProps) {
-  const { link, connectedDevice } = props;
+  const { link, connectedDevice, toast } = props;
+  const [streaming, setStreaming] = useState(false);
+  const [frame, setFrame] = useState<string | null>(null);
+  const [frameCount, setFrameCount] = useState(0);
+  const [lastTap, setLastTap] = useState<{ x: number; y: number } | null>(null);
+  const [textBuf, setTextBuf] = useState("");
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const dragStart = useRef<{ x: number; y: number } | null>(null);
+
+  // subscribe to JPEG frames from the Rust link layer
+  useEffect(() => {
+    let un: (() => void) | undefined;
+    api.on<{ jpeg: string }>("screen_frame", (e) => {
+      setFrame(`data:image/jpeg;base64,${e.payload.jpeg}`);
+      setFrameCount((c) => c + 1);
+    }).then((u) => { un = u; });
+    return () => un?.();
+  }, []);
+
+  const start = async () => {
+    try {
+      await api.invoke("screen_start");
+      setStreaming(true);
+      toast("Screen stream starting…", "info");
+    } catch (e) { toast(`Stream failed: ${e}`, "err"); }
+  };
+
+  const stop = async () => {
+    try {
+      await api.invoke("screen_stop");
+      setStreaming(false);
+      setFrame(null);
+      toast("Stream stopped", "info");
+    } catch (e) { toast(`Stop failed: ${e}`, "err"); }
+  };
+
+  const norm = (ev: React.PointerEvent) => {
+    const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    return {
+      x: Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width)),
+      y: Math.min(1, Math.max(0, (ev.clientY - r.top) / r.height)),
+    };
+  };
+
+  const onTap = async (ev: React.PointerEvent) => {
+    if (!streaming) return;
+    // only fire tap if this wasn't the end of a swipe
+    if (dragStart.current) {
+      const s = dragStart.current;
+      dragStart.current = null;
+      const p = norm(ev);
+      const dx = Math.abs(p.x - s.x), dy = Math.abs(p.y - s.y);
+      if (dx > 0.02 || dy > 0.02) {
+        try { await api.invoke("inject_swipe", { x1: s.x, y1: s.y, x2: p.x, y2: p.y }); } catch {}
+        return;
+      }
+    }
+    const p = norm(ev);
+    setLastTap(p);
+    try { await api.invoke("inject_tap", { x: p.x, y: p.y }); } catch {}
+  };
+
+  const onKey = async (ev: React.KeyboardEvent) => {
+    if (!streaming) return;
+    if (ev.key.length === 1) {
+      try { await api.invoke("inject_text", { text: ev.key }); } catch {}
+    } else if (["Enter", "Backspace", "Escape", "Tab", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home"].includes(ev.key)) {
+      ev.preventDefault();
+      try { await api.invoke("inject_key", { key: ev.key }); } catch {}
+    }
+  };
+
+  const sendText = async () => {
+    if (!textBuf) return;
+    try {
+      await api.invoke("inject_text", { text: textBuf });
+      setTextBuf("");
+      toast("Text sent", "ok");
+    } catch (e) { toast(`Send failed: ${e}`, "err"); }
+  };
+
   return (
     <div className="view">
       <PageHead
@@ -416,19 +496,51 @@ function ScreenView(props: ShellProps) {
         sub={link.connected ? `Mirror ${connectedDevice?.name ?? "phone"} in real time` : "Connect a phone to mirror its screen."}
       />
       <div className="screen-frame">
-        <div className="screen-canvas">
-          {link.connected ? (
-            <div className="no-signal"><strong>Stream starting…</strong>Consent on the phone.</div>
+        <div
+          className="screen-canvas interactive"
+          ref={canvasRef}
+          tabIndex={link.connected && streaming ? 0 : -1}
+          onPointerDown={(e) => { dragStart.current = norm(e); }}
+          onPointerUp={onTap}
+          onKeyDown={onKey}
+          title={streaming ? "Click = tap · drag = swipe · type = text" : undefined}
+        >
+          {frame ? (
+            <img src={frame} alt="phone screen" draggable={false} />
+          ) : link.connected ? (
+            <div className="no-signal">
+              <strong>{streaming ? "Waiting for frames…" : "Stream off"}</strong>
+              {streaming ? "Starting capture on the phone." : "Press Start stream."}
+            </div>
           ) : (
             <div className="no-signal"><strong>No phone connected</strong>Go to Devices, connect.</div>
           )}
+          {lastTap && frame && (
+            <span className="tap-ripple" style={{ left: `${lastTap.x * 100}%`, top: `${lastTap.y * 100}%` }} key={`${lastTap.x}-${lastTap.y}-${frameCount}`} />
+          )}
         </div>
-        <div className="screen-bar"><span>{link.connected ? "H.264 · WebRTC" : "idle"}</span></div>
+        <div className="screen-bar">
+          <span>{streaming && frameCount > 0 ? `${frameCount} frames · tap/drag/type` : link.connected ? "ready" : "idle"}</span>
+        </div>
         <div className="screen-toolbar">
+          {!streaming
+            ? <button className="btn primary sm" disabled={!link.connected} onClick={start}>Start stream</button>
+            : <button className="btn sm" onClick={stop}>Stop</button>}
           <button className="btn ghost sm" disabled={!link.connected}>Rotate</button>
           <button className="btn ghost sm" disabled={!link.connected}>Fullscreen</button>
-          <button className="btn ghost sm" disabled={!link.connected}>Record</button>
         </div>
+        {streaming && (
+          <div className="screen-typebar">
+            <input
+              className="field"
+              placeholder="Type on the phone…"
+              value={textBuf}
+              onChange={(e) => setTextBuf(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") sendText(); }}
+            />
+            <button className="btn sm" onClick={sendText} disabled={!textBuf}>Send</button>
+          </div>
+        )}
       </div>
     </div>
   );

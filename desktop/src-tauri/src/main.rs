@@ -293,8 +293,24 @@ async fn run_link(
                 }
             }
             Ok(Some(Ok(Message::Binary(bin)))) => {
-                if let lynko_core::DecodedFrame::Chunk { id, data } = lynko_core::decode_frame(&bin) {
-                    let _ = app.emit("file_chunk", serde_json::json!({ "id": &id, "len": data.len() }));
+                use lynko_core::DecodedFrame;
+                match lynko_core::decode_frame(&bin) {
+                    DecodedFrame::Chunk { id, data } => {
+                        let _ = app.emit("file_chunk", serde_json::json!({ "id": &id, "len": data.len() }));
+                    }
+                    _ => {
+                        // Screen frame (b"LV1" + raw JPEG bytes) or unknown binary.
+                        // Forward the raw JPEG to the frontend canvas.
+                        if bin.len() > 3 && &bin[..3] == lynko_core::FRAME_MAGIC {
+                            use base64::Engine;
+                            use tauri::Manager;
+                            if let Some(win) = app.get_webview_window("main") {
+                                let _ = win.emit("screen_frame", serde_json::json!({
+                                    "jpeg": base64::engine::general_purpose::STANDARD.encode(&bin[3..]),
+                                }));
+                            }
+                        }
+                    }
                 }
             }
             Ok(Some(Ok(Message::Close(_)))) | Ok(None) | Err(_) => break,
@@ -364,6 +380,36 @@ fn audio_start(state: State<'_, LynkoState>) -> Result<(), String> {
 #[tauri::command]
 fn audio_stop(state: State<'_, LynkoState>) -> Result<(), String> {
     send_cmd(&state, &Command::StopAudio)
+}
+
+/* ------------------------------------------------------------------ */
+/* input injection + WebRTC signaling                                  */
+/* ------------------------------------------------------------------ */
+
+#[tauri::command]
+fn inject_tap(state: State<'_, LynkoState>, x: f32, y: f32) -> Result<(), String> {
+    send_cmd(&state, &Command::Tap { x, y })
+}
+
+#[tauri::command]
+fn inject_swipe(state: State<'_, LynkoState>, x1: f32, y1: f32, x2: f32, y2: f32) -> Result<(), String> {
+    send_cmd(&state, &Command::Swipe { x1, y1, x2, y2 })
+}
+
+#[tauri::command]
+fn inject_key(state: State<'_, LynkoState>, key: String) -> Result<(), String> {
+    send_cmd(&state, &Command::Key { key })
+}
+
+#[tauri::command]
+fn inject_text(state: State<'_, LynkoState>, text: String) -> Result<(), String> {
+    send_cmd(&state, &Command::Text { text })
+}
+
+/// Forward a WebRTC SDP/ICE blob from the frontend to the phone.
+#[tauri::command]
+fn send_signal(state: State<'_, LynkoState>, payload: serde_json::Value) -> Result<(), String> {
+    send_cmd(&state, &Command::Signal { payload })
 }
 
 #[tauri::command]
@@ -470,6 +516,11 @@ fn main() {
             screen_stop,
             audio_start,
             audio_stop,
+            inject_tap,
+            inject_swipe,
+            inject_key,
+            inject_text,
+            send_signal,
             send_file,
             set_pc_clipboard,
             get_pc_clipboard

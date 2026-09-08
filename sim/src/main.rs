@@ -183,6 +183,24 @@ async fn handle_link(stream: tokio::net::TcpStream) {
 
     let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
 
+    // screen stream state (activated by StartScreen)
+    let streaming = Arc::new(AtomicU64::new(0)); // 0 = off, 1 = on
+    let frame_tx = tx.clone();
+    let stream_flag = streaming.clone();
+    tokio::spawn(async move {
+        let mut frame_n: u64 = 0;
+        loop {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            if stream_flag.load(Ordering::Relaxed) != 1 { continue; }
+            frame_n += 1;
+            let jpeg = render_frame(frame_n);
+            let mut msg = Vec::with_capacity(3 + jpeg.len());
+            msg.extend_from_slice(b"LV1");
+            msg.extend_from_slice(&jpeg);
+            if frame_tx.send(Message::binary(msg)).is_err() { break; }
+        }
+    });
+
     // battery + notification ticker
     tokio::spawn(async move {
         let mut pct: i8 = 78;
@@ -242,7 +260,7 @@ async fn handle_link(stream: tokio::net::TcpStream) {
                     Some(Ok(Message::Text(txt))) => {
                         match serde_json::from_str::<Command>(&txt) {
                             Ok(cmd) => {
-                                let reply = handle_command(cmd, &clip, &mut open_files).await;
+                                let reply = handle_command(cmd, &clip, &mut open_files, &streaming).await;
                                 if let Some(ev) = reply {
                                     if sink.send(Message::text(serde_json::to_string(&ev).unwrap())).await.is_err() { break; }
                                 }
@@ -277,6 +295,7 @@ async fn handle_command(
     cmd: Command,
     clip: &Arc<std::sync::Mutex<String>>,
     open_files: &mut HashMap<String, (std::fs::File, u64)>,
+    streaming: &Arc<AtomicU64>,
 ) -> Option<Event> {
     match cmd {
         Command::Copy { text } => {
@@ -292,16 +311,40 @@ async fn handle_command(
             Some(Event::Battery { pct: 82, charging: false })
         }
         Command::StartScreen => {
-            println!("sim: screen start requested (video lands with the real phone app)");
-            Some(Event::Log { msg: "screen capture requested — video pipeline arrives with the Android app".into() })
+            streaming.store(1, Ordering::Relaxed);
+            println!("sim: screen start → live JPEG frames (2fps)");
+            Some(Event::Log { msg: "screen capture started (sim pattern)".into() })
         }
-        Command::StopScreen => Some(Event::Log { msg: "screen stopped".into() }),
+        Command::StopScreen => {
+            streaming.store(0, Ordering::Relaxed);
+            Some(Event::Log { msg: "screen stopped".into() })
+        }
         Command::StartAudio => Some(Event::Log { msg: "audio capture requested".into() }),
         Command::StopAudio => Some(Event::Log { msg: "audio stopped".into() }),
         Command::FileBegin { id, name, size } => {
             let chunks = size.div_ceil(lynko_core::FILE_CHUNK_SIZE as u64);
             println!("sim: file begin {name} ({size} bytes, ~{chunks} chunks) id={id}");
             Some(Event::Log { msg: format!("receiving {name} ({size} bytes)") })
+        }
+        Command::Tap { x, y } => {
+            println!("sim: TAP at ({x:.3},{y:.3})");
+            Some(Event::Log { msg: format!("tap ({x:.2}, {y:.2})") })
+        }
+        Command::Swipe { x1, y1, x2, y2 } => {
+            println!("sim: SWIPE ({x1:.2},{y1:.2})→({x2:.2},{y2:.2})");
+            Some(Event::Log { msg: format!("swipe → ({x2:.2}, {y2:.2})") })
+        }
+        Command::Key { key } => {
+            println!("sim: KEY {key}");
+            Some(Event::Log { msg: format!("key {key}") })
+        }
+        Command::Text { text } => {
+            println!("sim: TEXT {:?}", text);
+            Some(Event::Log { msg: format!("text {:?}", text) })
+        }
+        Command::Signal { payload } => {
+            println!("sim: SIGNAL {:?}", payload);
+            None
         }
     }
     // encode_chunk is exercised by the desktop sender; sim just decodes.
@@ -310,4 +353,44 @@ async fn handle_command(
         let _ = encode_chunk;
         e
     })
+}
+
+/// Generate a 108×240 JPEG test pattern that shifts hue per frame.
+fn render_frame(frame: u64) -> Vec<u8> {
+    use jpeg_encoder::{ColorType, Encoder};
+    let w: u32 = 108;
+    let h: u32 = 240;
+    let mut pixels = vec![0u8; (w * h * 3) as usize];
+    for y in 0..h {
+        for x in 0..w {
+            let hue = ((x as f64 / w as f64 * 360.0) + (frame as f64 * 15.0)) % 360.0;
+            let val = ((y as f64 / h as f64) * 0.7 + 0.3) * 255.0;
+            let (r, g, b) = hsv_to_rgb(hue, 0.8, val / 255.0);
+            let idx = ((y * w + x) * 3) as usize;
+            pixels[idx] = r;
+            pixels[idx + 1] = g;
+            pixels[idx + 2] = b;
+        }
+    }
+    let mut buf = Vec::new();
+    {
+        let enc = Encoder::new(&mut buf, 85);
+        enc.encode(&pixels, w as u16, h as u16, ColorType::Rgb).unwrap();
+    }
+    buf
+}
+
+fn hsv_to_rgb(h: f64, s: f64, v: f64) -> (u8, u8, u8) {
+    let c = v * s;
+    let x = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
+    let m = v - c;
+    let (r1, g1, b1) = match h as u32 {
+        0..=59 => (c, x, 0.0),
+        60..=119 => (x, c, 0.0),
+        120..=179 => (0.0, c, x),
+        180..=239 => (0.0, x, c),
+        240..=299 => (x, 0.0, c),
+        _ => (c, 0.0, x),
+    };
+    (((r1 + m) * 255.0) as u8, ((g1 + m) * 255.0) as u8, ((b1 + m) * 255.0) as u8)
 }
