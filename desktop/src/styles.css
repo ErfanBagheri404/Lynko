@@ -1,9 +1,7 @@
 /* ============================================================
-   Lynko desktop — "Link Room"
-   Deep neutral graphite; the amber signal color is reserved for
-   CONNECTION and live moments. Dark-first: screen-mirroring
-   context, room-like, video sits in it naturally.
-   Type: Schibsted Grotesk (display/UI) + JetBrains Mono (data)
+   Lynko desktop — Link Room
+   Deep neutral graphite; amber signal reserved for connection.
+   Schibsted Grotesk (UI) + JetBrains Mono (data)
    ============================================================ */
 
 :root {
@@ -29,15 +27,12 @@
   --font: "Schibsted Grotesk Variable", "Schibsted Grotesk", sans-serif;
   --mono: "JetBrains Mono", monospace;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
-html,
-body,
-#root {
+html, body, #root {
   height: 100%;
 }
 
@@ -52,34 +47,14 @@ body {
   overflow: hidden;
 }
 
-/* --- browser surfaces, themed --- */
-::selection {
-  background: var(--signal);
-  color: var(--signal-ink);
-}
+::selection { background: var(--signal); color: var(--signal-ink); }
 
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-::-webkit-scrollbar-thumb {
-  background: #2e3237;
-  border-radius: 5px;
-  border: 2px solid var(--paper);
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #3a3f45;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: #2e3237; border-radius: 5px; border: 2px solid var(--paper); }
+::-webkit-scrollbar-thumb:hover { background: #3a3f45; }
+::-webkit-scrollbar-track { background: transparent; }
 
-input,
-button,
-textarea {
-  font-family: inherit;
-  caret-color: var(--signal);
-}
+input, button, textarea { font-family: inherit; caret-color: var(--signal); }
 
 :focus-visible {
   outline: 2px solid var(--signal);
@@ -88,18 +63,22 @@ textarea {
 }
 
 /* ============================================================
-   Shell
+   Shell — full-height with footer pinned to bottom
    ============================================================ */
+
+.app {
+  height: 100%;
+}
 
 .shell {
   height: 100%;
   display: grid;
-  grid-template-columns: 224px minmax(0, 1fr) 304px;
-  grid-template-rows: 54px minmax(0, 1fr) 30px;
+  grid-template-columns: 200px 1fr;
+  grid-template-rows: 50px 1fr 32px;
   grid-template-areas:
-    "brand top top"
-    "rail stage insp"
-    "rail status status";
+    "brand top"
+    "rail  stage"
+    "rail  status";
 }
 
 .brand {
@@ -107,16 +86,12 @@ textarea {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0 18px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--line);
   border-right: 1px solid var(--line);
 }
 
-.mark {
-  width: 22px;
-  height: 22px;
-  flex: none;
-  display: block;
-}
+.mark { width: 22px; height: 22px; flex: none; display: block; }
 
 .wordmark {
   font-size: 17px;
@@ -130,18 +105,9 @@ textarea {
   grid-area: top;
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   padding: 0 20px;
   border-bottom: 1px solid var(--line);
-}
-
-.top .conn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
-  font-size: 13px;
-  color: var(--ink1);
 }
 
 .conn-chip {
@@ -152,6 +118,10 @@ textarea {
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--card);
+  font-size: 13px;
+  color: var(--ink1);
+  cursor: default;
+  transition: border-color 400ms ease, background 400ms ease;
 }
 
 .conn-chip.live {
@@ -165,6 +135,7 @@ textarea {
   height: 7px;
   border-radius: 50%;
   background: var(--ink2);
+  transition: background 400ms ease;
 }
 
 .conn-chip.live .dot {
@@ -173,9 +144,7 @@ textarea {
 }
 
 @keyframes breathe {
-  50% {
-    opacity: 0.55;
-  }
+  50% { opacity: 0.5; }
 }
 
 /* --- nav rail --- */
@@ -183,27 +152,29 @@ textarea {
 .rail {
   grid-area: rail;
   border-right: 1px solid var(--line);
-  padding: 14px 10px;
+  padding: 12px 8px;
   display: flex;
   flex-direction: column;
   gap: 2px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.015), transparent 30%);
+  background: linear-gradient(180deg, rgba(255,255,255,0.015), transparent 30%);
 }
+
+.rail-spacer { flex: 1; }
 
 .rail-item {
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: 10px;
   padding: 9px 12px;
   border: 0;
   background: transparent;
   color: var(--ink1);
   border-radius: var(--radius-ctl);
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 500;
   cursor: pointer;
   text-align: left;
-  transition: color 120ms ease, background 120ms ease;
+  transition: color 160ms ease, background 160ms ease, transform 80ms ease;
 }
 
 .rail-item:hover {
@@ -217,22 +188,17 @@ textarea {
   box-shadow: inset 0 0 0 1px var(--line);
 }
 
-.rail-item.on svg {
-  color: var(--signal);
-}
-
-.rail-item svg {
-  flex: none;
-}
+.rail-item.on svg { color: var(--signal); }
+.rail-item svg { flex: none; }
 
 .rail-badge {
   margin-left: auto;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 10px;
   color: var(--ink1);
   background: var(--card);
   border: 1px solid var(--line);
-  padding: 1px 7px;
+  padding: 1px 6px;
   border-radius: 999px;
 }
 
@@ -241,65 +207,38 @@ textarea {
   color: var(--signal);
 }
 
-.rail-foot {
-  margin-top: auto;
-  padding: 10px 12px 4px;
-  font-family: var(--mono);
-  font-size: 10.5px;
-  color: var(--ink2);
-}
-
 /* --- stage --- */
 
 .stage {
   grid-area: stage;
   overflow-y: auto;
-  padding: 26px 30px 40px;
+  padding: 24px 28px 36px;
 }
 
 .view {
-  max-width: 760px;
-  margin: 0 auto;
+  max-width: 800px;
+  animation: viewIn 280ms var(--ease-out) both;
 }
 
-.pagehead {
-  margin-bottom: 22px;
+@keyframes viewIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
+
+.pagehead { margin-bottom: 20px; }
 
 .pagehead h1 {
   margin: 0;
-  font-size: clamp(24px, 2.6vw, 32px);
+  font-size: clamp(22px, 2.4vw, 30px);
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.15;
 }
 
 .pagehead .sub {
-  margin: 6px 0 0;
+  margin: 5px 0 0;
   color: var(--ink1);
-  max-width: 65ch;
-}
-
-/* --- inspector --- */
-
-.insp {
-  grid-area: insp;
-  border-left: 1px solid var(--line);
-  overflow-y: auto;
-  padding: 18px;
-  background: rgba(255, 255, 255, 0.012);
-}
-
-.insp h3 {
-  margin: 0 0 10px;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--ink1);
-  letter-spacing: 0;
-}
-
-.insp .sect {
-  margin-bottom: 22px;
+  max-width: 60ch;
 }
 
 /* --- status bar --- */
@@ -308,7 +247,7 @@ textarea {
   grid-area: status;
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: 16px;
   padding: 0 16px;
   border-top: 1px solid var(--line);
   font-family: var(--mono);
@@ -317,13 +256,8 @@ textarea {
   background: var(--paper);
 }
 
-.status .sp {
-  margin-left: auto;
-}
-
-.status .lit {
-  color: var(--signal);
-}
+.status .sp { margin-left: auto; }
+.status .lit { color: var(--signal); }
 
 /* ============================================================
    Controls
@@ -341,20 +275,21 @@ textarea {
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  transition: border-color 120ms ease, background 120ms ease, transform 60ms ease;
+  transition: border-color 160ms ease, background 160ms ease, transform 60ms ease, box-shadow 160ms ease;
 }
 
 .btn:hover:not(:disabled) {
   border-color: var(--signal-line);
   background: #272b30;
+  box-shadow: 0 0 0 3px var(--signal-wash);
 }
 
 .btn:active:not(:disabled) {
-  transform: translateY(1px);
+  transform: scale(0.97);
 }
 
 .btn:disabled {
-  opacity: 0.45;
+  opacity: 0.4;
   cursor: default;
 }
 
@@ -368,6 +303,7 @@ textarea {
 .btn.primary:hover:not(:disabled) {
   background: #ffc06a;
   border-color: #ffc06a;
+  box-shadow: 0 0 0 3px var(--signal-wash);
 }
 
 .btn.ghost {
@@ -376,14 +312,9 @@ textarea {
   color: var(--ink1);
 }
 
-.btn.ghost:hover:not(:disabled) {
-  color: var(--ink0);
-}
+.btn.ghost:hover:not(:disabled) { color: var(--ink0); }
 
-.btn.sm {
-  padding: 5px 12px;
-  font-size: 13px;
-}
+.btn.sm { padding: 5px 12px; font-size: 13px; }
 
 .field {
   width: 100%;
@@ -393,33 +324,31 @@ textarea {
   border-radius: var(--radius-ctl);
   color: var(--ink0);
   font-size: 14px;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
 }
 
-.field::placeholder {
-  color: var(--ink2);
-}
+.field::placeholder { color: var(--ink2); }
 
 .field:focus {
   outline: none;
   border-color: var(--signal-line);
+  box-shadow: 0 0 0 3px var(--signal-wash);
 }
 
-/* card */
 .card {
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-card);
   padding: 20px;
+  animation: cardIn 320ms var(--ease-out) both;
 }
 
-.card + .card {
-  margin-top: 14px;
-}
+.card + .card { margin-top: 14px; }
 
 .card h2 {
   margin: 0 0 4px;
-  font-size: 16.5px;
+  font-size: 16px;
   font-weight: 600;
   letter-spacing: -0.01em;
 }
@@ -430,15 +359,28 @@ textarea {
   font-size: 13.5px;
 }
 
+.card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.card-actions .btn { flex: 1; justify-content: center; }
+
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 /* ============================================================
-   Devices view — the link room
+   Devices view
    ============================================================ */
 
 .discover {
   display: grid;
   grid-template-columns: 1.15fr 1fr;
   gap: 14px;
-  align-items: stretch;
+  align-items: start;
 }
 
 .radar {
@@ -464,24 +406,41 @@ textarea {
   top: 50%;
 }
 
-.ring.r1 { width: 120px; height: 120px; }
-.ring.r2 { width: 200px; height: 200px; }
-.ring.r3 { width: 280px; height: 280px; border-color: rgba(255, 255, 255, 0.05); }
+.ring.r1 { width: 100px; height: 100px; }
+.ring.r2 { width: 180px; height: 180px; }
+.ring.r3 { width: 260px; height: 260px; border-color: rgba(255,255,255,0.04); }
+
+/* radar sweep — the one memorable animation */
+.radar-world::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 130px;
+  height: 130px;
+  translate: -50% -50%;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0deg, var(--signal-wash) 40deg, transparent 80deg);
+  animation: sweep 4s linear infinite;
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+@keyframes sweep {
+  from { rotate: 0deg; }
+  to { rotate: 360deg; }
+}
 
 .radar-core {
   position: absolute;
   left: 50%;
   top: 50%;
   translate: -50% -50%;
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: var(--ink2);
-}
-
-.app.scanning .radar-core {
   background: var(--signal);
-  animation: breathe 1.4s ease-in-out infinite;
+  box-shadow: 0 0 12px var(--signal);
 }
 
 .ping {
@@ -493,74 +452,59 @@ textarea {
   background: rgba(123, 196, 127, 0.15);
   translate: -50% -50%;
   cursor: pointer;
-  transition: transform 120ms var(--ease-out);
+  transition: transform 160ms var(--ease-spring), box-shadow 160ms ease;
+  animation: pingIn 400ms var(--ease-spring) both;
 }
 
 .ping:hover {
-  transform: scale(1.25);
+  transform: scale(1.3);
+  box-shadow: 0 0 16px rgba(123, 196, 127, 0.3);
 }
 
-.app.scanning .ping {
-  animation: ping-birth 900ms var(--ease-out) both;
-}
-
-@keyframes ping-birth {
-  from {
-    opacity: 0;
-    scale: 0.3;
-  }
+@keyframes pingIn {
+  from { opacity: 0; scale: 0.2; }
+  to { opacity: 1; scale: 1; }
 }
 
 .radar-label {
   position: absolute;
   translate: -50% 0;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 10px;
   color: var(--ink1);
   white-space: nowrap;
   padding-top: 12px;
+  left: 50%;
+  top: 100%;
 }
 
 .radar-foot {
-  padding: 12px 4px 0;
+  padding: 10px 4px 0;
   font-size: 13px;
   color: var(--ink1);
 }
 
-.radar-foot strong {
-  color: var(--ink0);
-}
+.radar-foot strong { color: var(--ink0); }
 
-/* device rows (in card + inspector) */
+/* device rows */
 
 .devrow {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 14px;
+  padding: 11px 14px;
   border: 1px solid var(--line);
   border-radius: var(--radius-ctl);
   background: var(--card2);
+  transition: border-color 160ms ease;
 }
 
-.devrow + .devrow {
-  margin-top: 8px;
-}
+.devrow + .devrow { margin-top: 8px; }
+.devrow:hover { border-color: var(--line-strong); }
 
-.devrow .who {
-  min-width: 0;
-}
-
-.devrow .who strong {
-  display: block;
-  font-size: 14.5px;
-}
-
-.devrow .who .addr {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--ink1);
-}
+.devrow .who { min-width: 0; }
+.devrow .who strong { display: block; font-size: 14px; }
+.devrow .who .addr { font-family: var(--mono); font-size: 11px; color: var(--ink1); }
 
 .devrow .act {
   margin-left: auto;
@@ -573,12 +517,14 @@ textarea {
   height: 8px;
   border-radius: 50%;
   flex: none;
+  transition: background 400ms ease;
 }
 
 .dev-dot.on { background: var(--ok); }
 .dev-dot.off { background: var(--ink2); }
 
-/* how-to steps */
+/* steps */
+
 .steps {
   margin: 0;
   padding: 0;
@@ -589,65 +535,50 @@ textarea {
 .steps li {
   counter-increment: step;
   position: relative;
-  padding: 10px 0 10px 40px;
+  padding: 10px 0 10px 38px;
   color: var(--ink1);
   font-size: 13.5px;
   border-top: 1px solid var(--line);
 }
 
-.steps li:first-child {
-  border-top: 0;
-}
+.steps li:first-child { border-top: 0; }
 
 .steps li::before {
   content: counter(step);
   position: absolute;
   left: 0;
   top: 9px;
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   display: grid;
   place-items: center;
   border: 1px solid var(--line-strong);
   border-radius: 50%;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 11px;
   color: var(--ink0);
 }
 
-/* the sequence is real, so the numbers carry meaning here */
-
 /* ============================================================
-   Screen view — the device silhouette
+   Screen view
    ============================================================ */
 
 .screen-frame {
   margin: 0 auto;
-  width: min(340px, 100%);
-  border-radius: 26px;
-  border: 6px solid #060708;
+  width: min(320px, 100%);
+  border-radius: 24px;
+  border: 5px solid #060708;
   background: #060708;
   box-shadow: var(--shadow-pop);
-  position: relative;
-}
-
-.screen-frame .cam {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #1c1f24;
-  margin: 10px auto 6px;
 }
 
 .screen-canvas {
   aspect-ratio: 9 / 19;
-  border-radius: 14px;
-  background:
-    radial-gradient(120% 90% at 50% 0%, #1a1d22 0%, #101216 70%);
+  border-radius: 12px;
+  background: radial-gradient(120% 90% at 50% 0%, #1a1d22, #101216 70%);
   display: grid;
   place-items: center;
   overflow: hidden;
-  position: relative;
 }
 
 .screen-canvas video {
@@ -657,17 +588,17 @@ textarea {
   display: block;
 }
 
-.screen-canvas .no-signal {
+.no-signal {
   text-align: center;
   color: var(--ink2);
   font-size: 13px;
   padding: 0 24px;
 }
 
-.screen-canvas .no-signal strong {
+.no-signal strong {
   display: block;
   color: var(--ink1);
-  font-size: 14.5px;
+  font-size: 14px;
   margin-bottom: 4px;
 }
 
@@ -676,18 +607,24 @@ textarea {
   align-items: center;
   justify-content: center;
   gap: 10px;
-  padding: 12px 0 6px;
+  padding: 10px 0 4px;
+}
+
+.screen-bar span {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink2);
 }
 
 .screen-toolbar {
   display: flex;
   justify-content: center;
-  gap: 10px;
-  margin-top: 14px;
+  gap: 8px;
+  margin-top: 12px;
 }
 
 /* ============================================================
-   Inspector pieces
+   PIN pairing
    ============================================================ */
 
 .pin-row {
@@ -707,89 +644,17 @@ textarea {
   background: var(--card);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-ctl);
+  transition: border-color 160ms ease, box-shadow 160ms ease;
 }
 
 .pin-cell:focus {
   outline: none;
   border-color: var(--signal);
-}
-
-.pair-target {
-  text-align: center;
-  margin-bottom: 6px;
-}
-
-.pair-target strong {
-  display: block;
-  font-size: 15px;
-}
-
-.pair-target .addr {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--ink1);
-}
-
-.pair-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.pair-actions .btn {
-  flex: 1;
-  justify-content: center;
-}
-
-/* permission rows */
-.perm {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 11px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-ctl);
-  font-size: 13px;
-  color: var(--ink1);
-}
-
-.perm + .perm {
-  margin-top: 6px;
-}
-
-.perm .st {
-  margin-left: auto;
-  font-family: var(--mono);
-  font-size: 10.5px;
-}
-
-.perm .st.ok { color: var(--ok); }
-.perm .st.wait { color: var(--signal); }
-
-/* activity console */
-.console {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  color: var(--ink1);
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-ctl);
-  padding: 10px 12px;
-  max-height: 150px;
-  overflow-y: auto;
-}
-
-.console div {
-  padding: 1.5px 0;
-  overflow-wrap: anywhere;
-}
-
-.console .t {
-  color: var(--ink2);
-  margin-right: 6px;
+  box-shadow: 0 0 0 3px var(--signal-wash);
 }
 
 /* ============================================================
-   Feature views (clipboard / files / notifications / audio)
+   Clipboard / Files / Notifications / Audio
    ============================================================ */
 
 .feature-grid {
@@ -804,12 +669,13 @@ textarea {
   padding: 28px 20px;
   text-align: center;
   color: var(--ink1);
-  transition: border-color 140ms ease, background 140ms ease;
+  transition: border-color 200ms ease, background 200ms ease, transform 120ms ease;
 }
 
 .dropzone.over {
   border-color: var(--signal);
   background: var(--signal-wash);
+  transform: scale(1.01);
 }
 
 .dropzone strong {
@@ -818,20 +684,25 @@ textarea {
   margin-bottom: 4px;
 }
 
+.dropzone span {
+  font-size: 13px;
+}
+
+.file-list { margin-top: 12px; }
+
 .file-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
+  gap: 10px;
+  padding: 9px 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius-ctl);
   background: var(--card2);
-  font-size: 13.5px;
+  font-size: 13px;
+  animation: rowIn 200ms var(--ease-out) both;
 }
 
-.file-row + .file-row {
-  margin-top: 6px;
-}
+.file-row + .file-row { margin-top: 6px; }
 
 .file-row .sz {
   margin-left: auto;
@@ -845,24 +716,22 @@ textarea {
   border: 1px solid var(--line);
   border-radius: var(--radius-ctl);
   background: var(--card2);
+  animation: rowIn 200ms var(--ease-out) both;
 }
 
-.note-row + .note-row {
-  margin-top: 6px;
-}
+.note-row + .note-row { margin-top: 6px; }
 
-.note-row .app {
+.note-app {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 10px;
   color: var(--ink2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
-.note-row .title {
-  font-size: 13.5px;
-  margin: 1px 0;
-}
+.note-title { font-size: 13.5px; margin: 2px 0; }
 
-.note-row .body {
+.note-body {
   font-size: 12.5px;
   color: var(--ink1);
   overflow: hidden;
@@ -871,14 +740,10 @@ textarea {
   -webkit-box-orient: vertical;
 }
 
-.clip-history {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
+.clip-history { display: flex; flex-direction: column; gap: 6px; }
 
 .clip-item {
-  padding: 10px 12px;
+  padding: 9px 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius-ctl);
   background: var(--card2);
@@ -889,17 +754,12 @@ textarea {
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
-  transition: border-color 120ms ease;
+  transition: border-color 160ms ease, transform 80ms ease;
 }
 
 .clip-item:hover {
   border-color: var(--signal-line);
-}
-
-.mono-note {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--ink2);
+  transform: translateX(2px);
 }
 
 .empty-inline {
@@ -909,7 +769,8 @@ textarea {
   text-align: center;
 }
 
-/* settings rows */
+/* settings */
+
 .set-row {
   display: flex;
   align-items: center;
@@ -918,40 +779,14 @@ textarea {
   border-top: 1px solid var(--line);
 }
 
-.set-row:first-of-type {
-  border-top: 0;
-}
+.set-row:first-of-type { border-top: 0; }
 
-.set-row .what {
-  min-width: 0;
-}
-
-.set-row .what strong {
-  display: block;
-  font-size: 14px;
-}
-
-.set-row .what span {
-  font-size: 12.5px;
-  color: var(--ink1);
-}
-
-.set-row .ctl {
-  margin-left: auto;
-}
-
-.kbd {
-  font-family: var(--mono);
-  font-size: 11px;
-  background: var(--card2);
-  border: 1px solid var(--line-strong);
-  border-bottom-width: 2px;
-  border-radius: 5px;
-  padding: 2px 7px;
-  color: var(--ink1);
-}
+.set-row .what { min-width: 0; }
+.set-row .what strong { display: block; font-size: 14px; }
+.set-row .what span { font-size: 12.5px; color: var(--ink1); }
 
 /* toggle */
+
 .toggle {
   position: relative;
   width: 40px;
@@ -960,7 +795,7 @@ textarea {
   border: 1px solid var(--line-strong);
   background: var(--card2);
   cursor: pointer;
-  transition: background 140ms ease, border-color 140ms ease;
+  transition: background 200ms ease, border-color 200ms ease;
   flex: none;
 }
 
@@ -973,7 +808,7 @@ textarea {
   height: 16px;
   border-radius: 50%;
   background: var(--ink1);
-  transition: translate 140ms var(--ease-out), background 140ms ease;
+  transition: translate 200ms var(--ease-spring), background 200ms ease;
 }
 
 .toggle.on {
@@ -986,6 +821,63 @@ textarea {
   background: var(--signal-ink);
 }
 
+/* ============================================================
+   Toast notifications
+   ============================================================ */
+
+.toasts {
+  position: fixed;
+  bottom: 44px;
+  right: 20px;
+  z-index: 999;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.toast {
+  padding: 10px 16px;
+  border-radius: var(--radius-ctl);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink0);
+  background: var(--card2);
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--shadow-pop);
+  animation: toastIn 280ms var(--ease-out) both;
+  pointer-events: auto;
+  max-width: 320px;
+}
+
+.toast-ok {
+  border-color: rgba(123, 196, 127, 0.3);
+  background: rgba(123, 196, 127, 0.12);
+}
+
+.toast-err {
+  border-color: rgba(224, 122, 106, 0.3);
+  background: rgba(224, 122, 106, 0.12);
+}
+
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(10px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ============================================================
+   Shared animation
+   ============================================================ */
+
+@keyframes rowIn {
+  from { opacity: 0; transform: translateX(-4px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* ============================================================
+   Reduced motion
+   ============================================================ */
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -993,14 +885,5 @@ textarea {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
-  }
-}
-
-@media (max-width: 1180px) {
-  .shell {
-    grid-template-columns: 200px minmax(0, 1fr) 0;
-  }
-  .insp {
-    display: none;
   }
 }
