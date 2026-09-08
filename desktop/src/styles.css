@@ -928,3 +928,32 @@ input, button, textarea { font-family: inherit; caret-color: var(--signal); }
   pointer-events: none;
   animation: ripple-out 0.45s ease-out forwards;
 }
+
+/* ── Screen: rotate + fullscreen ─────────────────────── */
+.screen-canvas.rotated img {
+  transform: rotate(90deg);
+  transform-origin: center;
+  width: auto;
+  height: 100%;
+  max-width: none;
+}
+.screen-canvas:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  border: none;
+  border-radius: 0;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.screen-canvas:fullscreen img {
+  max-width: 100vw;
+  max-height: 100vh;
+  width: auto;
+  height: auto;
+}
+.screen-canvas:fullscreen.rotated img {
+  height: 100vh;
+  width: auto;
+}

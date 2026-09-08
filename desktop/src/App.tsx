@@ -414,6 +414,8 @@ function ScreenView(props: ShellProps) {
   const [frameCount, setFrameCount] = useState(0);
   const [lastTap, setLastTap] = useState<{ x: number; y: number } | null>(null);
   const [textBuf, setTextBuf] = useState("");
+  const [rotated, setRotated] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
   const canvasRef = useRef<HTMLDivElement>(null);
   const dragStart = useRef<{ x: number; y: number } | null>(null);
 
@@ -480,6 +482,22 @@ function ScreenView(props: ShellProps) {
     }
   };
 
+  const toggleRotate = () => setRotated((r) => !r);
+
+  const toggleFullscreen = async () => {
+    const el = canvasRef.current;
+    if (!el) return;
+    try {
+      if (!document.fullscreenElement) {
+        await el.requestFullscreen();
+        setFullscreen(true);
+      } else {
+        await document.exitFullscreen();
+        setFullscreen(false);
+      }
+    } catch {}
+  };
+
   const sendText = async () => {
     if (!textBuf) return;
     try {
@@ -497,7 +515,7 @@ function ScreenView(props: ShellProps) {
       />
       <div className="screen-frame">
         <div
-          className="screen-canvas interactive"
+          className={`screen-canvas interactive${rotated ? " rotated" : ""}`}
           ref={canvasRef}
           tabIndex={link.connected && streaming ? 0 : -1}
           onPointerDown={(e) => { dragStart.current = norm(e); }}
@@ -526,8 +544,8 @@ function ScreenView(props: ShellProps) {
           {!streaming
             ? <button className="btn primary sm" disabled={!link.connected} onClick={start}>Start stream</button>
             : <button className="btn sm" onClick={stop}>Stop</button>}
-          <button className="btn ghost sm" disabled={!link.connected}>Rotate</button>
-          <button className="btn ghost sm" disabled={!link.connected}>Fullscreen</button>
+          <button className="btn ghost sm" disabled={!link.connected} onClick={toggleRotate}>{rotated ? "Upright" : "Rotate"}</button>
+          <button className="btn ghost sm" disabled={!link.connected} onClick={toggleFullscreen}>{fullscreen ? "Exit" : "Fullscreen"}</button>
         </div>
         {streaming && (
           <div className="screen-typebar">
