@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Lynko</string>
+    <string name="accessibility_service_description">Lynko uses this to receive tap and swipe commands from your paired desktop.</string>
+</resources>
