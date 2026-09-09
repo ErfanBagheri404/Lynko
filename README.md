@@ -1,16 +1,14 @@
 <div align="center">
 
-<img src="docs/screenshots/phone-main.png" alt="Lynko — your phone, on your desktop" width="120" align="right" style="border-radius: 24px; margin-left: 24px;" />
-
 # 📱 Lynko
 
 **Your phone, on your desktop.**
 
-Open-source Samsung Flow / AirDroid alternative — mirror and control **any Android phone** from your Windows PC over Wi-Fi.
+Open-source Samsung Flow / AirDroid alternative — mirror and control **any Android phone** from your Windows or Linux PC over Wi-Fi.
 
 **No USB cable · No USB debugging · No root · No cloud · No accounts**
 
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Android-2A2E33?logo=windows&logoColor=0078D6&labelColor=16181A)](https://github.com/ErfanBagheri404/Lynko/releases)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20Android-2A2E33?logo=linux&logoColor=FCC624&labelColor=16181A)](https://github.com/ErfanBagheri404/Lynko/releases)
 [![Release](https://img.shields.io/github/v/release/ErfanBagheri404/Lynko?include_prereleases&logo=github&labelColor=16181A)](https://github.com/ErfanBagheri404/Lynko/releases)
 [![CI](https://img.shields.io/badge/CI-offline-6B7280?labelColor=16181A)](#)
 [![License](https://img.shields.io/badge/license-Apache--2.0-FFB454?labelColor=16181A)](LICENSE)
@@ -46,6 +44,7 @@ Grab the latest build from [**Releases**](https://github.com/ErfanBagheri404/Lyn
 | Platform | Files |
 |---|---|
 | 🪟 **Windows** | `Lynko_x64-setup.exe` (installer) · `.msi` · portable `.zip` |
+| 🐧 **Linux** | `.deb` · `.rpm` · `.AppImage` (portable) |
 | 🤖 **Android** | `lynko-<flavor>-<abi>.apk` — pick **`universal`** if unsure |
 
 ### Android flavors
@@ -73,7 +72,7 @@ Grab the latest build from [**Releases**](https://github.com/ErfanBagheri404/Lyn
 
 ```text
 ┌──────────────────┐   mDNS discovery (port 7912)   ┌──────────────────┐
-│   Windows PC     │ ──── HTTP pairing (PIN) ─────► │   Android phone   │
+│   Desktop PC     │ ──── HTTP pairing (PIN) ─────► │   Android phone   │
 │  Tauri 2 + Rust  │ ──── WebSocket link :7913 ──── │  Kotlin (native)  │
 │                  │      JSON control + binary      │                   │
 │  WebView UI      │   LV1/JPEG frames · LF1 audio   │  MediaProjection  │
@@ -91,7 +90,7 @@ Nothing routes through the internet. Works on airplane-mode Wi-Fi.
 ## 🛠️ Building
 
 ```bash
-# Desktop (Windows)
+# Desktop (Windows / Linux)
 cd desktop && npm ci && npm run tauri build
 
 # Android (debug)
@@ -101,13 +100,15 @@ cd android && ./gradlew assembleBaseDebug
 cd core && cargo test
 ```
 
+> 🐧 Linux builds need the usual Tauri prerequisites: `libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev`
+
 ## 🗺️ Roadmap
 
 - [ ] Hardware H.264 encoding (scrcpy-level CPU usage)
 - [ ] Phone → PC file transfer
 - [ ] TLS on the link socket + rotating PIN
 - [ ] Phone-side send history & device avatars (LocalSend-inspired)
-- [ ] Linux / macOS desktop builds
+- [ ] macOS desktop builds
 - [ ] Remote notifications quick-reply
 
 ## ❓ FAQ
