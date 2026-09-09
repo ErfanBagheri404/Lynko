@@ -459,6 +459,10 @@ fn send_file(state: State<'_, LynkoState>, path: String) -> Result<String, Strin
                 Err(_) => break,
             }
         }
+        // Flush the receiver's buffer to disk.
+        let _ = tx.try_send(Message::Text(
+            serde_json::to_string(&Command::FileEnd { id: id.clone() }).unwrap().into(),
+        ));
         let _ = device_id;
     });
     Ok(id)

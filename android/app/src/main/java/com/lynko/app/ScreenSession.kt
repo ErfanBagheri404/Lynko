@@ -6,42 +6,40 @@ import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
 import android.media.ImageReader
 import android.media.projection.MediaProjection
-import android.media.projection.MediaProjectionManager
+import android.os.Handler
+import android.os.HandlerThread
 import android.util.Log
 import java.io.ByteArrayOutputStream
 
-/**
- * MediaProjection capture → JPEG frames → LV1 binary frames over WS.
- * ImageReader-backed VirtualDisplay gives frame callbacks without a visible surface.
- */
+/** MediaProjection capture -> JPEG frames. Projection is created ONCE by
+ * LinkService (consent tokens are single-use) and passed in here. */
 class ScreenSession(
-    private val context: Context,
+    context: Context,
+    private val projection: MediaProjection,
     private val onFrame: (ByteArray) -> Unit,
 ) {
-    private var projection: MediaProjection? = null
-    private var virtualDisplay: android.hardware.display.VirtualDisplay? = null
-    @Volatile private var running = false
-
     private val metrics = context.resources.displayMetrics
     private val width = metrics.widthPixels
     private val height = metrics.heightPixels
     private val density = metrics.densityDpi
 
-    fun start() {
-        val mpm = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        val code = ScreenPermission.resultCode
-        val data = ScreenPermission.resultData ?: return
-        projection = mpm.getMediaProjection(code, data)
-        projection?.registerCallback(object : MediaProjection.Callback() {
-            override fun onStop() {
-                Log.i("lynko", "projection stopped")
-                stop()
-            }
-        }, null)
+    private var virtualDisplay: android.hardware.display.VirtualDisplay? = null
+    private var reader: ImageReader? = null
+    private var thread: HandlerThread? = null
+    private var registered = false
 
-        val reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 4)
-        reader.setOnImageAvailableListener({ r ->
-            val img = r.acquireLatestImage() ?: return@setOnImageAvailableListener
+    @Volatile private var running = false
+
+    fun start() {
+        // ImageReader callbacks need a looper — the WS thread has none, so
+        // give the reader its own background handler thread.
+        thread = HandlerThread("lynko-frames").also { it.start() }
+        val handler = Handler(thread!!.looper)
+
+        val r = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 4)
+        reader = r
+        r.setOnImageAvailableListener({ rr ->
+            val img = rr.acquireLatestImage() ?: return@setOnImageAvailableListener
             try {
                 val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
                 bitmap.copyPixelsFromBuffer(img.planes[0].buffer)
@@ -52,12 +50,12 @@ class ScreenSession(
             } finally {
                 img.close()
             }
-        }, null)
+        }, handler)
 
-        virtualDisplay = projection?.createVirtualDisplay(
+        virtualDisplay = projection.createVirtualDisplay(
             "lynko-capture", width, height, density,
             DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-            reader.surface, null, null
+            r.surface, null, null
         )
         running = true
         Log.i("lynko", "screen session started ${width}x${height}@$density")
@@ -67,8 +65,10 @@ class ScreenSession(
         running = false
         virtualDisplay?.release()
         virtualDisplay = null
-        projection?.stop()
-        projection = null
+        reader?.close()
+        reader = null
+        thread?.quitSafely()
+        thread = null
         Log.i("lynko", "screen session stopped")
     }
 }

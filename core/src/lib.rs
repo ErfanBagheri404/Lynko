@@ -108,6 +108,10 @@ pub enum Command {
         name: String,
         size: u64,
     },
+    /// Last chunk sent — receiver flushes its buffer to disk now.
+    FileEnd {
+        id: String,
+    },
     /// Screen/audio signaling payload (SDP offer/answer, ICE — opaque JSON).
     /// The real phone answers WebRTC; the simulator answers `{"kind":"sim-video"}`.
     Signal { payload: serde_json::Value },

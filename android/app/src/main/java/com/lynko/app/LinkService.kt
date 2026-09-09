@@ -36,6 +36,7 @@ class LinkService : Service() {
 
     private lateinit var pairingServer: PairingServer
     private var linkServer: LinkServer? = null
+    private var projection: android.media.projection.MediaProjection? = null
     private val screenSession = AtomicReference<ScreenSession?>(null)
     private val audioSession = AtomicReference<AudioSession?>(null)
 
@@ -115,10 +116,18 @@ class LinkService : Service() {
     /** Minimal pairing endpoint: POST /pair {"pin":"1234"} -> {"ok":true,...} */
     inner class PairingServer(port: Int) : NanoHTTPD("0.0.0.0", port) {
         override fun serve(session: IHTTPSession): Response {
+            Log.i(TAG, "pair http: ${session.method} ${session.uri}")
             if (session.uri != "/pair") {
                 return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "not found")
             }
-            val body = session.inputStream.readBytes().decodeToString()
+            val body: String = try {
+                val files = HashMap<String, String>()
+                session.parseBody(files)
+                files["postData"] ?: ""
+            } catch (e: Exception) {
+                Log.e(TAG, "pair body read failed", e)
+                ""
+            }
             val json = try { JSONObject(body) } catch (e: Exception) { JSONObject() }
             val pin = json.optString("pin")
             if (pin != "1234") {
@@ -231,6 +240,22 @@ class LinkService : Service() {
                 sendEvent(conn, "log", JSONObject().put("msg", "text (${text.length} chars)"))
             }
             "copy" -> sendEvent(conn, "clipboard", JSONObject().put("text", ClipboardBridge.read(applicationContext)))
+            "file_begin" -> {
+                val o = d as? JSONObject
+                FileRx.begin(
+                    o?.optString("id") ?: "",
+                    o?.optString("name") ?: "file.bin",
+                )
+            }
+            "file_end" -> {
+                val id = (d as? JSONObject)?.optString("id") ?: ""
+                val path = FileRx.finalize(applicationContext, id)
+                sendEvent(conn, "file_done", JSONObject()
+                    .put("id", id)
+                    .put("ok", path != null)
+                    .put("path", path ?: JSONObject.NULL)
+                    .put("error", if (path != null) JSONObject.NULL else "unknown id"))
+            }
             "paste" -> {
                 val text = (d as? JSONObject)?.optString("text") ?: ""
                 ClipboardBridge.write(applicationContext, text)
@@ -249,17 +274,57 @@ class LinkService : Service() {
         conn.send(JSONObject().put("t", type).put("d", payload).toString())
     }
 
-    private fun startScreenCapture(conn: WebSocket) {
-        // Requires MediaProjection consent — captured via MainActivity flow.
-        // For the first E2E pass we require the user to have granted it in the UI.
+    /** Create the MediaProjection ONCE per consent grant; re-creating from the
+     * same consent token throws ("don't re-use resultData"). Audio and screen
+     * both read from this single instance. */
+    private fun obtainProjection(create: Boolean): android.media.projection.MediaProjection? {
+        if (projection != null) return projection
+        if (!create) return null
         val resultData = ScreenPermission.resultData
         if (resultData == null) {
+            // Consent was never granted or was revoked — request again.
+            // This posts to the main thread since the WS handler isn't there.
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                ScreenPermission.requestFromService(this@LinkService)
+            }
+            return null
+        }
+        val mpm = getSystemService(android.media.projection.MediaProjectionManager::class.java)
+        projection = try {
+            mpm.getMediaProjection(ScreenPermission.resultCode, resultData)
+        } catch (e: Exception) {
+            Log.e(TAG, "media projection failed — will re-request", e)
+            ScreenPermission.invalidate() // clear stale token
+            null
+        }
+        if (projection == null) {
+            // Token expired — re-request consent.
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                ScreenPermission.requestFromService(this@LinkService)
+            }
+            return null
+        }
+        projection?.registerCallback(object : android.media.projection.MediaProjection.Callback() {
+            override fun onStop() {
+                Log.i(TAG, "projection stopped remotely")
+                projection = null
+                screenSession.getAndSet(null)?.stop()
+                audioSession.getAndSet(null)?.stop()
+            }
+        }, android.os.Handler(android.os.Looper.getMainLooper()))
+        return projection
+    }
+
+    private fun startScreenCapture(conn: WebSocket) {
+        // Requires MediaProjection consent — captured via MainActivity flow.
+        val proj = obtainProjection(create = true)
+        if (proj == null) {
             sendEvent(conn, "log", JSONObject().put("msg", "screen permission not granted on phone"))
             return
         }
         val old = screenSession.getAndSet(null)
         old?.stop()
-        val session = ScreenSession(applicationContext) { jpeg ->
+        val session = ScreenSession(applicationContext, proj) { jpeg ->
             val msg = java.nio.ByteBuffer.allocateDirect(3 + jpeg.size)
             msg.put("LV1".toByteArray())
             msg.put(jpeg)
@@ -272,21 +337,19 @@ class LinkService : Service() {
     }
 
     private fun startAudioCapture(conn: WebSocket) {
-        val resultData = ScreenPermission.resultData
-        if (resultData == null) {
-            sendEvent(conn, "log", JSONObject().put("msg", "screen permission required for audio capture"))
-            return
-        }
         if (android.os.Build.VERSION.SDK_INT < 29) {
             sendEvent(conn, "log", JSONObject().put("msg", "audio capture needs Android 10+"))
             return
         }
+        val proj = obtainProjection(create = true)
+        if (proj == null) {
+            sendEvent(conn, "log", JSONObject().put("msg", "screen permission required for audio capture"))
+            return
+        }
         val old = audioSession.getAndSet(null)
         old?.stop()
-        val mpm = getSystemService(android.media.projection.MediaProjectionManager::class.java)
-        val projection = mpm.getMediaProjection(ScreenPermission.resultCode, resultData)
         val session = AudioSession(
-            projection,
+            proj,
             broadcast = { ws, s -> ws.send(s) },
             getConns = { linkServer?.getConnections()?.toList() ?: emptyList() },
         )
