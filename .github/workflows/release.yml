@@ -187,10 +187,18 @@ jobs:
 
       - name: Install Tauri system deps
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
-            librsvg2-dev patchelf
+          for i in 1 2 3; do
+            sudo apt-get update && break
+            echo "apt-get update failed (attempt $i) — retrying in 15s"
+            sleep 15
+          done
+          for i in 1 2 3; do
+            sudo apt-get install -y \
+              libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+              librsvg2-dev patchelf && break
+            echo "apt-get install failed (attempt $i) — retrying in 15s"
+            sleep 15
+          done
 
       - uses: actions/setup-node@v4
         with:
