@@ -1,6 +1,8 @@
 package com.lynko.app
 
 import android.Manifest
+import android.provider.Settings
+import android.widget.LinearLayout
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -23,6 +25,15 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusSub: TextView
     private lateinit var startBtn: Button
     private lateinit var pinText: TextView
+    private lateinit var permScreen: LinearLayout
+    private lateinit var permScreenIcon: TextView
+    private lateinit var permScreenText: TextView
+    private lateinit var permA11y: LinearLayout
+    private lateinit var permA11yIcon: TextView
+    private lateinit var permA11yText: TextView
+    private lateinit var permNotif: LinearLayout
+    private lateinit var permNotifIcon: TextView
+    private lateinit var permNotifText: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -33,6 +44,16 @@ class MainActivity : AppCompatActivity() {
         statusSub = findViewById(R.id.statusSub)
         startBtn = findViewById(R.id.startBtn)
         pinText = findViewById(R.id.pinText)
+
+        permScreen = findViewById(R.id.permScreen)
+        permScreenIcon = findViewById(R.id.permScreenIcon)
+        permScreenText = findViewById(R.id.permScreenText)
+        permA11y = findViewById(R.id.permA11y)
+        permA11yIcon = findViewById(R.id.permA11yIcon)
+        permA11yText = findViewById(R.id.permA11yText)
+        permNotif = findViewById(R.id.permNotif)
+        permNotifIcon = findViewById(R.id.permNotifIcon)
+        permNotifText = findViewById(R.id.permNotifText)
 
         renderState()
 
@@ -92,6 +113,34 @@ class MainActivity : AppCompatActivity() {
             startBtn.isEnabled = true
             pinText.visibility = View.GONE
         }
+        renderPerms()
+    }
+
+    /** Checklist rows flip from • (todo) to ✓ (granted) as the user grants them. */
+    private fun renderPerms() {
+        val a11yOk = Settings.Secure.getString(
+            contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        )?.contains("com.lynko.app") == true
+        val notifOk = if (Build.VERSION.SDK_INT >= 24) {
+            androidx.core.app.NotificationManagerCompat.getEnabledListenerPackages(this)
+                .contains(packageName)
+        } else true
+
+        fun bind(row: LinearLayout, icon: TextView, text: TextView, ok: Boolean, label: String) {
+            row.background = if (ok) drawableOk else null
+            row.alpha = if (ok) 0.72f else 1f
+            icon.text = if (ok) "✓" else "•"
+            icon.setTextColor(if (ok) 0xFF7BC47F.toInt() else 0xFFFFB454.toInt())
+            text.paint.isStrikeThruText = ok
+            text.text = label
+        }
+        bind(permScreen, permScreenIcon, permScreenText, ScreenPermission.isGranted, "Screen capture — for mirroring")
+        bind(permA11y, permA11yIcon, permA11yText, a11yOk, "Accessibility service — for remote taps and swipes")
+        bind(permNotif, permNotifIcon, permNotifText, notifOk, "Notification access — to forward notifications")
+    }
+
+    private val drawableOk: android.graphics.drawable.Drawable? by lazy {
+        getDrawable(R.drawable.perm_row_done)
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {

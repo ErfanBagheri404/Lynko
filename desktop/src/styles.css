@@ -704,6 +704,25 @@ input, button, textarea { font-family: inherit; caret-color: var(--signal); }
 
 .file-row + .file-row { margin-top: 6px; }
 
+.file-row .fbar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: 100%;
+  background: transparent;
+  overflow: hidden;
+  border-radius: 0 0 var(--radius-ctl) var(--radius-ctl);
+}
+.file-row .fbar i {
+  display: block;
+  height: 100%;
+  background: var(--signal);
+  transition: width 220ms var(--ease-out);
+}
+
+.file-row { position: relative; }
+
 .file-row .sz {
   margin-left: auto;
   font-family: var(--mono);

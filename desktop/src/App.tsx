@@ -22,6 +22,21 @@ try {
 
 const api = { invoke: invokeFn, on: listenFn };
 
+/* Native file-drop hook. In Tauri 2 (WebView2) the DOM never sees real
+   file drops — only the window-level drag-drop event carries OS paths.
+   App() installs the handler; until then drops are parked. */
+let dropHandler: ((paths: string[]) => void) | null = null;
+async function initNativeDrop() {
+  try {
+    const apiWin = await import("@tauri-apps/api/window");
+    const win = apiWin.getCurrentWindow();
+    await win.onDragDropEvent((ev) => {
+      if (ev.payload.type === "drop" && dropHandler) dropHandler(ev.payload.paths);
+    });
+  } catch { /* browser dev mode — DOM drop fallback stays */ }
+}
+void initNativeDrop();
+
 /* ------------------------------------------------------------------ */
 /* types                                                                */
 /* ------------------------------------------------------------------ */
@@ -170,12 +185,37 @@ export default function App() {
       toast(e.payload.msg, "info");
     }).then((u) => unsubs.push(u));
 
-    return () => unsubs.forEach((u) => u());
+    /* native OS file drops (real paths) feed the Files queue too */
+    dropHandler = (paths) => {
+      for (const p of paths) queueFile(p);
+    };
+
+    return () => { unsubs.forEach((u) => u()); dropHandler = null; };
   }, [toast]);
 
   useEffect(() => {
     api.invoke<Device[]>("list_devices").then(setDevices).catch(() => {});
   }, []);
+
+  /** One shared send path: DOM dropzone and native window drop both land here. */
+  const queueFile = useCallback(async (path: string) => {
+    const name = path.split(/[\\/]/).pop() ?? path;
+    if (!link.connected) {
+      toast(`Connect a phone before sending ${name}`, "err");
+      return;
+    }
+    setFiles((f) => [
+      { id: ++toastUid, name, at: Date.now(), status: "sending" as const },
+      ...f,
+    ]);
+    try {
+      await api.invoke("send_file", { path });
+      toast(`Sending ${name}…`, "info");
+    } catch (e) {
+      setFiles((f) => f.map((x) => x.name === name && x.status === "sending" ? { ...x, status: "failed" as const } : x));
+      toast(`Send failed: ${name}: ${e}`, "err");
+    }
+  }, [link.connected, toast]);
 
   return (
     <div className={link.connected ? "app live" : "app"}>
@@ -188,6 +228,7 @@ export default function App() {
         notes={notes}
         connectedDevice={connectedDevice}
         toast={toast}
+        queueFile={queueFile}
       />
       <div className="toasts" aria-live="polite">
         {toasts.map((t) => (
@@ -213,6 +254,7 @@ interface ShellProps {
   notes: NoteItem[];
   connectedDevice: Device | null;
   toast: (msg: string, kind?: "info" | "ok" | "err") => void;
+  queueFile: (path: string) => void;
 }
 
 function Shell(props: ShellProps) {
@@ -626,21 +668,32 @@ function ClipboardView(props: ShellProps) {
 /* ------------------------------------------------------------------ */
 
 function FilesView(props: ShellProps) {
-  const { link, files, toast } = props;
+  const { link, files, toast, queueFile } = props;
   const [dragOver, setDragOver] = useState(false);
 
+  /* DOM dropzone: Tauri's WebView never delivers real paths here, so the
+     native window-level drop (initNativeDrop → queueFile) is the real path.
+     The dropzone only collects Browser paths when running in dev mode. */
   const onDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
-    if (!link.connected) { toast("Connect a phone first", "err"); return; }
-    for (const f of Array.from(e.dataTransfer.files)) {
-      const path = (f as any).path as string;
-      if (!path) { toast(`${f.name}: path unavailable`, "err"); continue; }
-      toast(`Sending ${f.name}…`, "info");
-      try {
-        await api.invoke("send_file", { path });
-      } catch (e) { toast(`Send failed: ${e}`, "err"); }
+    const list = Array.from(e.dataTransfer.files);
+    if (!list.length && !link.connected) { toast("Connect a phone first", "err"); return; }
+    for (const f of list) {
+      const path = (f as unknown as { path?: string }).path;
+      if (!path) { toast(`${f.name}: drop files onto the app window (Tauri handles it)`, "err"); continue; }
+      queueFile(path);
     }
+  };
+
+  const browse = async () => {
+    try {
+      const dlg = await import("@tauri-apps/plugin-dialog");
+      const picked = await dlg.open({ multiple: true, title: "Send to phone" });
+      if (!picked) return;
+      const paths = Array.isArray(picked) ? picked : [picked];
+      for (const p of paths) queueFile(String(p));
+    } catch (e) { toast(`Browse failed: ${e}`, "err"); }
   };
 
   return (
@@ -652,18 +705,31 @@ function FilesView(props: ShellProps) {
           onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
           onDragLeave={() => setDragOver(false)}
           onDrop={onDrop}
+          onClick={browse}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => { if (e.key === "Enter") browse(); }}
         >
           <strong>Drop files to send</strong>
-          <span>They travel over the same encrypted link.</span>
+          <span>…or click to browse. They travel over the same encrypted link.</span>
         </div>
         {files.length > 0 && (
           <div className="file-list">
-            {files.map((f) => (
-              <div className="file-row" key={f.id}>
-                <IconFiles /><span>{f.name}</span>
-                <span className="sz">{f.size ? `${(f.size / 1024).toFixed(0)} KB` : "…"} · {f.status}</span>
-              </div>
-            ))}
+            {files.map((f) => {
+              const pct = f.size && f.written ? Math.min(100, Math.round((f.written / f.size) * 100)) : null;
+              return (
+                <div className="file-row" key={f.id}>
+                  <IconFiles /><span>{f.name}</span>
+                  <span className="sz">
+                    {f.size ? `${(f.size / 1024).toFixed(0)} KB` : "…"} · {f.status}
+                    {pct != null && f.status === "sent" && f.written! < (f.size ?? 0) ? ` · ${pct}%` : ""}
+                  </span>
+                  {pct != null && (
+                    <span className="fbar" aria-hidden="true"><i style={{ width: `${pct}%` }} /></span>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
