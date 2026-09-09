@@ -71,4 +71,43 @@ object FileRx {
             file.absolutePath
         }
     }
+
+    /**
+     * Save an already-written temp file (LocalSend-style transfer path) into
+     * Downloads with the given display name. Deletes the temp afterwards.
+     */
+    @Synchronized
+    fun saveStream(ctx: Context, tmp: File, name: String): String? {
+        val safe = name.replace(Regex("[/\\\\]"), "_").ifBlank { "file.bin" }
+        return try {
+            val path: String = if (Build.VERSION.SDK_INT >= 29) {
+                val values = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, safe)
+                    put(MediaStore.Downloads.MIME_TYPE, "application/octet-stream")
+                    put(MediaStore.Downloads.IS_PENDING, 1)
+                }
+                val resolver = ctx.contentResolver
+                val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                    ?: return null
+                resolver.openOutputStream(uri)?.use { out -> tmp.inputStream().use { it.copyTo(out) } }
+                values.clear()
+                values.put(MediaStore.Downloads.IS_PENDING, 0)
+                resolver.update(uri, values, null, null)
+                Environment.DIRECTORY_DOWNLOADS + "/" + safe
+            } else {
+                val dir = File(Environment.getExternalStoragePublicDirectory(
+                    Environment.DIRECTORY_DOWNLOADS), "")
+                dir.mkdirs()
+                val file = File(dir, safe)
+                tmp.copyTo(file, overwrite = true)
+                file.absolutePath
+            }
+            tmp.delete()
+            Log.i("lynko", "file saved (stream): $path")
+            path
+        } catch (e: Exception) {
+            Log.e("lynko", "stream save failed", e)
+            null
+        }
+    }
 }

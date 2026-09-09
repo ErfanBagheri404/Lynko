@@ -3,12 +3,14 @@
 
 use futures_util::{SinkExt, StreamExt};
 use lynko_core::{
-    encode_chunk, Capabilities, Command, Event, PairRequest, PairResponse, FILE_CHUNK_SIZE,
+    Capabilities, Command, Event, PairRequest, PairResponse,
     LINK_PORT, PAIR_PORT, PROTOCOL_VERSION, SERVICE_TYPE,
 };
+/// HTTP port of the phone's LocalSend-style transfer server.
+const TRANSFER_PORT: u16 = 7914;
+use sha2::Digest;
 use mdns_sd::{ServiceDaemon, ServiceEvent};
 use std::collections::HashMap;
-use std::io::Read;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -30,6 +32,8 @@ struct Device {
 /// Handle to the live control link (one phone at a time in v1).
 struct LinkHandle {
     device_id: String,
+    device_name: String,
+    device_address: String,
     tx: tokio_mpsc::Sender<Message>,
     alive: Arc<AtomicBool>,
 }
@@ -238,7 +242,7 @@ fn connect_inner(state: &LynkoState, device_id: &str) -> Result<(), String> {
     let (tx, rx) = tokio_mpsc::channel::<Message>(64);
     let alive = Arc::new(AtomicBool::new(true));
 
-    { let mut link = state.link.lock().unwrap(); *link = Some(LinkHandle { device_id: device.id.clone(), tx: tx.clone(), alive: alive.clone() }); }
+    { let mut link = state.link.lock().unwrap(); *link = Some(LinkHandle { device_id: device.id.clone(), device_name: device.name.clone(), device_address: device.address.clone(), tx: tx.clone(), alive: alive.clone() }); }
 
     let _ = app.emit("link_state", serde_json::json!({ "connected": true, "device_id": &device.id }));
     let _ = app.emit("log", serde_json::json!({ "msg": format!("link connecting to {} ({})", device.name, device.address) }));
@@ -425,47 +429,113 @@ fn send_signal(state: State<'_, LynkoState>, payload: serde_json::Value) -> Resu
 
 #[tauri::command]
 fn send_file(state: State<'_, LynkoState>, path: String) -> Result<String, String> {
-    let (tx, alive, device_id) = {
+    send_files_v2(state, vec![path])
+}
+
+/// LocalSend-style session file push (Apache-2.0, localsend.org):
+/// POST /api/lynko/v2/prepare-upload with a sha256 manifest → phone consents
+/// → POST /api/lynko/v2/upload?sessionId&fileId per file → cancel on abort.
+#[tauri::command]
+fn send_files_v2(state: State<'_, LynkoState>, paths: Vec<String>) -> Result<String, String> {
+    let (addr, device_name, app) = {
         let link = state.link.lock().unwrap();
         let l = link.as_ref().ok_or("no phone connected")?;
-        (l.tx.clone(), l.alive.clone(), l.device_id.clone())
+        let app = state.app.lock().unwrap().clone().ok_or("app not ready")?;
+        (l.device_address.clone(), l.device_name.clone(), app)
     };
+    let session_id = uuid::Uuid::new_v4().to_string();
+    let session_id_disp = session_id.clone();
 
-    let mut file = std::fs::File::open(&path).map_err(|e| format!("cannot open {path}: {e}"))?;
-    let size = file.metadata().map_err(|e| e.to_string())?.len();
-    let name = std::path::Path::new(&path)
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "file.bin".into());
-    let id = uuid::Uuid::new_v4().to_string();
-    let id_disp = id.clone();
+    // Build the manifest: id, fileName, size, sha256 per file.
+    let mut manifest_files = Vec::new();
+    let mut metas = Vec::new();
+    for p in &paths {
+        let mut f = std::fs::File::open(p).map_err(|e| format!("cannot open {p}: {e}"))?;
+        let size = f.metadata().map_err(|e| e.to_string())?.len();
+        let name = std::path::Path::new(p)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "file.bin".into());
+        let id = uuid::Uuid::new_v4().to_string();
+        // hash while we still have the file open, then reopen for upload
+        let mut hasher = sha2::Sha256::new();
+        std::io::copy(&mut f, &mut hasher).map_err(|e| e.to_string())?;
+        let sha256 = format!("{:x}", hasher.finalize());
+        manifest_files.push(serde_json::json!({
+            "id": id, "fileName": name, "size": size, "sha256": sha256,
+        }));
+        metas.push((id, name, size, p.clone()));
+    }
 
-    send_cmd(&state, &Command::FileBegin { id: id.clone(), name: name.clone(), size })?;
+    let manifest = serde_json::json!({
+        "sessionId": session_id,
+        "sender": { "alias": whoami::fallible::username().unwrap_or_else(|_| "Desktop".into()),
+            "deviceModel": "PC" },
+        "files": manifest_files,
+    });
 
-    let app = state.app.lock().unwrap().clone().ok_or("app not ready")?;
-    std::thread::spawn(move || {
-        let mut buf = vec![0u8; FILE_CHUNK_SIZE];
-        let mut written: u64 = 0;
-        let id = id_disp;
-        loop {
-            match file.read(&mut buf) {
-                Ok(0) => break,
-                Ok(n) => {
-                    if !alive.load(Ordering::SeqCst) { return; }
-                    if tx.try_send(Message::binary(encode_chunk(&id, &buf[..n]))).is_err() { return; }
-                    written += n as u64;
-                    let _ = app.emit("file_progress", serde_json::json!({ "id": &id, "name": &name, "written": written, "total": size }));
+    let _ = app.emit("log", serde_json::json!({ "msg": format!("transfer: asking {device_name} to accept {} file(s)", metas.len()) }));
+
+    tauri::async_runtime::spawn(async move {
+        let base = format!("http://{}:{}", ws_host(&addr), TRANSFER_PORT);
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(120))
+            .build()
+            .unwrap();
+
+        // 1) prepare-upload — blocks until the user answers on the phone.
+        let prep: serde_json::Value = match client
+            .post(format!("{base}/api/lynko/v2/prepare-upload"))
+            .json(&manifest)
+            .send()
+            .await
+        {
+            Ok(r) if r.status().as_u16() == 200 => match r.json().await {
+                Ok(v) => v,
+                Err(e) => { let _ = app.emit("log", serde_json::json!({ "msg": format!("transfer: bad manifest reply: {e}") })); return; }
+            },
+            Ok(r) if r.status().as_u16() == 403 => {
+                let _ = app.emit("log", serde_json::json!({ "msg": "transfer declined on the phone" }));
+                for (id, _, _, _) in &metas {
+                    let _ = app.emit("file_done", serde_json::json!({ "id": id, "ok": false, "error": "declined" }));
                 }
-                Err(_) => break,
+                return;
+            }
+            Ok(r) => { let _ = app.emit("log", serde_json::json!({ "msg": format!("transfer: prepare failed: {}", r.status()) })); return; }
+            Err(e) => { let _ = app.emit("log", serde_json::json!({ "msg": format!("transfer: unreachable: {e}") })); return; }
+        };
+        let _ = prep;
+
+        // 2) upload each file's raw bytes
+        for (id, name, size, p) in &metas {
+            let data = match std::fs::read(p) {
+                Ok(d) => d,
+                Err(e) => {
+                    let _ = app.emit("file_done", serde_json::json!({ "id": id, "ok": false, "error": format!("read: {e}") }));
+                    continue;
+                }
+            };
+            let url = format!("{base}/api/lynko/v2/upload?sessionId={session_id}&fileId={id}");
+            match client.post(url).body(data).send().await {
+                Ok(r) if r.status().as_u16() == 200 => {
+                    let _ = app.emit("file_progress", serde_json::json!({ "id": id, "name": name, "written": size, "total": size }));
+                    let _ = app.emit("file_done", serde_json::json!({ "id": id, "ok": true }));
+                }
+                Ok(r) => {
+                    let _ = app.emit("file_done", serde_json::json!({ "id": id, "ok": false, "error": format!("upload: {}", r.status()) }));
+                    let _ = client.post(format!("{base}/api/lynko/v2/cancel?sessionId={session_id}")).send().await;
+                    return;
+                }
+                Err(e) => {
+                    let _ = app.emit("file_done", serde_json::json!({ "id": id, "ok": false, "error": format!("upload: {e}") }));
+                    let _ = client.post(format!("{base}/api/lynko/v2/cancel?sessionId={session_id}")).send().await;
+                    return;
+                }
             }
         }
-        // Flush the receiver's buffer to disk.
-        let _ = tx.try_send(Message::Text(
-            serde_json::to_string(&Command::FileEnd { id: id.clone() }).unwrap().into(),
-        ));
-        let _ = device_id;
+        let _ = app.emit("log", serde_json::json!({ "msg": format!("transfer complete: {} file(s) → {device_name}", metas.len()) }));
     });
-    Ok(id)
+    Ok(session_id_disp)
 }
 
 /* ------------------------------------------------------------------ */
@@ -537,6 +607,7 @@ fn main() {
             inject_text,
             send_signal,
             send_file,
+            send_files_v2,
             set_pc_clipboard,
             get_pc_clipboard
         ])

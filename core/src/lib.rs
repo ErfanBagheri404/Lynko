@@ -100,6 +100,9 @@ pub struct PairResponse {
     pub capabilities: Capabilities,
     /// WS port for the control link (usually `LINK_PORT`).
     pub link_port: u16,
+    /// HTTP port for the LocalSend-style transfer server (0 = unsupported).
+    #[serde(default)]
+    pub transfer_port: u16,
 }
 
 /// Commands desktop → phone over the control link (JSON text frames).

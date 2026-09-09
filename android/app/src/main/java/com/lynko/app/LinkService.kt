@@ -36,6 +36,7 @@ class LinkService : Service() {
 
     private lateinit var pairingServer: PairingServer
     private var linkServer: LinkServer? = null
+    private var transferServer: TransferServer? = null
     private var projection: android.media.projection.MediaProjection? = null
     private val screenSession = AtomicReference<ScreenSession?>(null)
     private val audioSession = AtomicReference<AudioSession?>(null)
@@ -61,6 +62,25 @@ class LinkService : Service() {
         running = true
         pairingServer = PairingServer(PAIR_PORT)
         pairingServer.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
+        // LocalSend-style HTTP receive server — session-consented file pushes
+        // (prepare-upload / upload / cancel). Runs beside the WS link.
+        transferServer = TransferServer(
+            appContext = this,
+            port = 7914,
+            deviceName = android.os.Build.MODEL ?: "Android",
+            onConsentRequest = { session, answer ->
+                TransferConsent.show(this, session, answer)
+            },
+            onProgress = { fileId, written, total ->
+                Log.d("lynko", "tx $fileId: $written/$total")
+            },
+            onFileDone = { fileId, ok, path, shaOk ->
+                Log.i("lynko", "tx done $fileId ok=$ok sha=$shaOk path=$path")
+            },
+            onSessionDone = { accepted, rejected ->
+                Log.i("lynko", "tx session done accepted=$accepted rejected=$rejected")
+            },
+        ).also { it.start(NanoHTTPD.SOCKET_READ_TIMEOUT, true) }
         linkServer = LinkServer(LINK_PORT).also {
             // Screen+audio bursts can exceed the default 60s idle window on
             // slow links; widen it so the server never drops a live desktop.
@@ -171,6 +191,7 @@ class LinkService : Service() {
                     .put("audio_capture", false) // real audio lands later
                     .put("battery_status", true))
                 .put("link_port", LINK_PORT)
+                .put("transfer_port", 7914)
             return newFixedLengthResponse(Response.Status.OK, "application/json", resp.toString())
         }
     }
@@ -407,6 +428,7 @@ class LinkService : Service() {
     override fun onDestroy() {
         running = false
         pairingServer.stop()
+        transferServer?.stop()
         linkServer?.stop()
         screenSession.getAndSet(null)?.stop()
         audioSession.getAndSet(null)?.stop()

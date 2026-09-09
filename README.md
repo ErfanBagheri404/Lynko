@@ -135,7 +135,7 @@ Not planned — Apple's platform doesn't allow screen capture the way Android do
 
 ## 🙏 Credits
 
-- [LocalSend](https://localsend.org) (Apache-2.0) — design inspiration
+- [LocalSend](https://localsend.org) (Apache-2.0) — Lynko's file transfer protocol (session manifest → consent → upload, sha256-verified) is adapted from LocalSend's v2 receive flow
 - Built with [Tauri 2](https://tauri.app), [Rust](https://rust-lang.org), [Kotlin](https://kotlinlang.org), [mDNS/NsdManager](https://developer.android.com/training/connect-devices-wirelessly/nsd)
 
 <div align="center">
