@@ -38,14 +38,4 @@ jobs:
       - run: npx tsc --noEmit
         working-directory: desktop
 
-  release:
-    name: Release artifacts
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [core]
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      # tauri-action lands here when desktop/ is scaffolded
-      - name: Placeholder (desktop not scaffolded yet)
-        run: echo "release job activates when desktop/ exists"
+  # Releases are handled by release.yml
