@@ -1,0 +1,292 @@
+name: Release
+
+# Every push to main → rolling "continuous" prerelease.
+# Every tag v* → stable release. Manual dispatch → same as main.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  # ────────────────────────────────────────────────────────────────────
+  # Android — 4 store flavors × (universal, arm64-v8a, armeabi-v7a, x86_64)
+  # Release-signed when ANDROID_KEYSTORE_BASE64 secret exists,
+  # otherwise debug-signed (still sideloadable).
+  # ────────────────────────────────────────────────────────────────────
+  android:
+    name: Android — ${{ matrix.flavor }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        flavor: [base, bazaar, myket, play]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Compute version
+        id: ver
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"; VERSION="${VERSION%%-*}"
+            CODE=$(echo "$VERSION" | awk -F. '{ printf "%d%03d%03d", $1, $2, $3 }')
+          else
+            VERSION="0.1.${GITHUB_RUN_NUMBER}"
+            CODE="${GITHUB_RUN_NUMBER}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+
+      - name: Build release APKs
+        working-directory: android
+        env:
+          FLAVOR: ${{ matrix.flavor }}
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 --decode > app/release.keystore
+            export KEYSTORE_FILE="$PWD/app/release.keystore"
+            echo "signing with injected release keystore"
+          else
+            echo "no keystore secret — falling back to debug signing"
+          fi
+          ./gradlew "assemble${FLAVOR^}Release" \
+            -PandroidVersionCode=${{ steps.ver.outputs.code }} \
+            -PandroidVersionName=${{ steps.ver.outputs.version }}
+
+      - name: Stage APKs
+        working-directory: android
+        run: |
+          FLAVOR="${{ matrix.flavor }}"
+          VER="${{ steps.ver.outputs.version }}"
+          DEST="dist-android-$FLAVOR"
+          mkdir -p "$DEST"
+          find app/build/outputs/apk -name "*-release.apk" | while read -r apk; do
+            NAME=$(basename "$apk")
+            case "$NAME" in
+              app-$FLAVOR-*-release.apk)
+                ABI="${NAME#app-$FLAVOR-}"; ABI="${ABI%-release.apk}"
+                cp "$apk" "$DEST/lynko-$VER-android-$FLAVOR-$ABI.apk"
+                ;;
+            esac
+          done
+          ls -la "$DEST"
+          [ -n "$(ls -A "$DEST")" ] || { echo "NO APKS PRODUCED"; exit 1; }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-${{ matrix.flavor }}
+          path: android/dist-android-${{ matrix.flavor }}/*.apk
+          if-no-files-found: error
+
+  # ────────────────────────────────────────────────────────────────────
+  # Windows — NSIS installer + MSI + portable zip
+  # ────────────────────────────────────────────────────────────────────
+  windows:
+    name: Windows — installer + portable
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "desktop/src-tauri -> target"
+
+      - run: npm ci
+        working-directory: desktop
+
+      - name: Compute version
+        id: ver
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"; VERSION="${VERSION%%-*}"
+          else
+            VERSION="0.1.${GITHUB_RUN_NUMBER}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Stamp version
+        shell: bash
+        run: |
+          V="${{ steps.ver.outputs.version }}"
+          node -e "
+            const fs=require('fs');
+            const p='desktop/src-tauri/tauri.conf.json';
+            const j=JSON.parse(fs.readFileSync(p,'utf8'));
+            j.version=process.argv[1];
+            fs.writeFileSync(p,JSON.stringify(j,null,2));
+          " "$V"
+          sed -i "s/^version = \".*\"/version = \"$V\"/" desktop/src-tauri/Cargo.toml
+
+      - name: Build installers
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: desktop
+          tauriScript: npx tauri
+          args: --bundles nsis,msi
+
+      - name: Assemble portable zip
+        shell: bash
+        run: |
+          V="${{ steps.ver.outputs.version }}"
+          EXE="desktop/src-tauri/target/release/lynko.exe"
+          [ -f "$EXE" ] || EXE=$(find desktop/src-tauri/target -name "lynko.exe" -path "*release*" | head -1)
+          STAGING="Lynko-$V-windows-x64-portable"
+          mkdir -p "$STAGING"
+          cp "$EXE" "$STAGING/Lynko.exe"
+          printf '%s\n' \
+            "Lynko portable build." \
+            "If the app fails to start, install the Microsoft WebView2 Runtime:" \
+            "https://developer.microsoft.com/microsoft-edge/webview2/" > "$STAGING/README.txt"
+          7z a "$STAGING.zip" "$STAGING"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            desktop/src-tauri/target/release/bundle/nsis/*.exe
+            desktop/src-tauri/target/release/bundle/msi/*.msi
+            Lynko-*-windows-x64-portable.zip
+          if-no-files-found: error
+
+  # ────────────────────────────────────────────────────────────────────
+  # Linux — deb + rpm + AppImage
+  # ────────────────────────────────────────────────────────────────────
+  linux:
+    name: Linux — deb/rpm/AppImage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Tauri system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev patchelf
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "desktop/src-tauri -> target"
+
+      - run: npm ci
+        working-directory: desktop
+
+      - name: Compute version
+        id: ver
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"; VERSION="${VERSION%%-*}"
+          else
+            VERSION="0.1.${GITHUB_RUN_NUMBER}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Stamp version
+        run: |
+          V="${{ steps.ver.outputs.version }}"
+          node -e "
+            const fs=require('fs');
+            const p='desktop/src-tauri/tauri.conf.json';
+            const j=JSON.parse(fs.readFileSync(p,'utf8'));
+            j.version=process.argv[1];
+            fs.writeFileSync(p,JSON.stringify(j,null,2));
+          " "$V"
+          sed -i "s/^version = \".*\"/version = \"$V\"/" desktop/src-tauri/Cargo.toml
+
+      - name: Build bundles
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: desktop
+          tauriScript: npx tauri
+          args: --bundles deb,rpm,appimage
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: |
+            desktop/src-tauri/target/release/bundle/deb/*.deb
+            desktop/src-tauri/target/release/bundle/rpm/*.rpm
+            desktop/src-tauri/target/release/bundle/appimage/*.AppImage
+          if-no-files-found: error
+
+  # ────────────────────────────────────────────────────────────────────
+  # Publish — collect everything into one GitHub Release
+  # main → rolling "continuous" prerelease (replaced each push)
+  # tag  → stable release "Lynko vX.Y.Z"
+  # ────────────────────────────────────────────────────────────────────
+  publish:
+    name: Publish release
+    needs: [android, windows, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: Flatten artifacts
+        run: |
+          mkdir -p flat
+          find release-assets -type f \( -name "*.apk" -o -name "*.exe" -o -name "*.msi" \
+              -o -name "*.zip" -o -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" \) \
+            -exec cp {} flat/ \;
+          ls -la flat
+
+      - name: Publish continuous prerelease (main pushes)
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete continuous --yes --cleanup-tag 2>/dev/null || true
+          gh release create continuous \
+            --prerelease \
+            --title "Continuous build" \
+            --notes "Automated build from main @ ${{ github.sha }}. APKs are debug-signed until a release keystore is configured." \
+            flat/*
+
+      - name: Publish stable release (tags)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "Lynko ${{ github.ref_name }}" \
+            --generate-notes \
+            flat/*

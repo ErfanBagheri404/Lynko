@@ -11,8 +11,19 @@ android {
         applicationId = "com.lynko.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        // CI passes -PandroidVersionCode / -PandroidVersionName; local defaults below.
+        versionCode = (project.findProperty("androidVersionCode") as String?)?.toInt() ?: 1
+        versionName = (project.findProperty("androidVersionName") as String?) ?: "0.1.0"
+    }
+
+    // Per-ABI APKs (plus a fat universal one) for smaller sideload downloads.
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("armeabi-v7a", "arm64-v8a", "x86_64")
+            isUniversalApk = true
+        }
     }
 
     buildToolsVersion = "35.0.0"
@@ -37,9 +48,27 @@ android {
         }
     }
 
+    // Release signing from env (CI). Without a keystore we fall back to the
+    // debug key so CI artifacts remain installable for sideloading.
+    val ksPath: String? = System.getenv("KEYSTORE_FILE")
+
+    signingConfigs {
+        if (ksPath != null) {
+            create("release") {
+                storeFile = File(ksPath)
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig =
+                if (ksPath != null) signingConfigs.getByName("release")
+                else signingConfigs.getByName("debug")
         }
     }
 
