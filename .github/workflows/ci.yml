@@ -27,15 +27,14 @@ jobs:
   desktop:
     name: Desktop typecheck
     runs-on: ubuntu-latest
-    if: hashFiles('desktop/package.json') != ''
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm ci || pnpm install --frozen-lockfile
+      - name: Install deps
         working-directory: desktop
-      - run: npx tsc --noEmit
+        run: npm ci
+      - name: TypeScript check
         working-directory: desktop
-
-  # Releases are handled by release.yml
+        run: npx tsc --noEmit
