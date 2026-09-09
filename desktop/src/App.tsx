@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Lang, LANGS, t as tr } from "./locales";
 import {
   IconAudio, IconBattery, IconClip, IconDevices, IconFiles, IconNotes,
   IconRefresh, IconScreen, IconSend, IconSettings, Mark,
@@ -125,6 +126,11 @@ function useToasts() {
 
 export default function App() {
   const [view, setView] = useState<View>("devices");
+  const [lang, setLang] = useState<Lang>(() => {
+    const saved = localStorage.getItem("lynko-lang");
+    return saved === "fa" || saved === "en" ? saved : (navigator.language || "").startsWith("fa") ? "fa" : "en";
+  });
+  useEffect(() => { localStorage.setItem("lynko-lang", lang); document.documentElement.lang = lang; }, [lang]);
   const [devices, setDevices] = useState<Device[]>([]);
   const [link, setLink] = useState<LinkState>({ connected: false });
   const [battery, setBattery] = useState<BatteryState | null>(null);
@@ -221,6 +227,7 @@ export default function App() {
     <div className={link.connected ? "app live" : "app"}>
       <Shell
         view={view} setView={setView}
+        lang={lang} setLang={setLang}
         devices={devices}
         link={link} battery={battery}
         clipItems={clipItems} setClipItems={setClipItems}
@@ -247,6 +254,7 @@ export default function App() {
 
 interface ShellProps {
   view: View; setView: (v: View) => void;
+  lang: Lang; setLang: (l: Lang) => void;
   devices: Device[];
   link: LinkState; battery: BatteryState | null;
   clipItems: ClipItem[]; setClipItems: React.Dispatch<React.SetStateAction<ClipItem[]>>;
@@ -258,7 +266,8 @@ interface ShellProps {
 }
 
 function Shell(props: ShellProps) {
-  const { view, setView, devices, link, battery, connectedDevice, notes } = props;
+  const { view, setView, lang, devices, link, battery, connectedDevice, notes } = props;
+  const T = (k: string) => tr(lang, "desktop", k);
 
   return (
     <div className="shell">
@@ -283,14 +292,14 @@ function Shell(props: ShellProps) {
       </div>
 
       <nav className="rail">
-        <NavItem view={view} setView={setView} id="devices" label="Devices" Icon={IconDevices} />
-        <NavItem view={view} setView={setView} id="screen" label="Screen" Icon={IconScreen} />
-        <NavItem view={view} setView={setView} id="clipboard" label="Clipboard" Icon={IconClip} />
-        <NavItem view={view} setView={setView} id="files" label="Files" Icon={IconFiles} />
-        <NavItem view={view} setView={setView} id="notifications" label="Notifications" Icon={IconNotes} badge={notes.length} />
-        <NavItem view={view} setView={setView} id="audio" label="Audio" Icon={IconAudio} />
+        <NavItem view={view} setView={setView} id="devices" label={T("nav_devices")} Icon={IconDevices} />
+        <NavItem view={view} setView={setView} id="screen" label={T("nav_screen")} Icon={IconScreen} />
+        <NavItem view={view} setView={setView} id="clipboard" label={T("nav_clipboard")} Icon={IconClip} />
+        <NavItem view={view} setView={setView} id="files" label={T("nav_files")} Icon={IconFiles} />
+        <NavItem view={view} setView={setView} id="notifications" label={T("nav_notifications")} Icon={IconNotes} badge={notes.length} />
+        <NavItem view={view} setView={setView} id="audio" label={T("nav_audio")} Icon={IconAudio} />
         <div className="rail-spacer" />
-        <NavItem view={view} setView={setView} id="settings" label="Settings" Icon={IconSettings} />
+        <NavItem view={view} setView={setView} id="settings" label={T("nav_settings")} Icon={IconSettings} />
       </nav>
 
       <main className="stage">
@@ -300,7 +309,7 @@ function Shell(props: ShellProps) {
         {view === "files" && <FilesView {...props} />}
         {view === "notifications" && <NotificationsView {...props} />}
         {view === "audio" && <AudioView {...props} />}
-        {view === "settings" && <SettingsView />}
+        {view === "settings" && <SettingsView {...props} />}
       </main>
 
       <footer className="status">
@@ -851,15 +860,39 @@ function AudioView(props: ShellProps) {
 /* Settings                                                             */
 /* ------------------------------------------------------------------ */
 
-function SettingsView() {
+function SettingsView(props: ShellProps) {
+  const { lang, setLang } = props;
   const [autoReconnect, setAutoReconnect] = useState(true);
   const [toasts, setToasts] = useState(true);
+  const T = (k: string) => tr(lang, "settings", k);
   return (
     <div className="view">
-      <PageHead title="Settings" sub="Lynko remembers everything you turn on." />
+      <PageHead title={T("settings_title")} sub={T("settings_sub")} />
       <div className="card">
-        <SetRow title="Auto-connect paired phones" desc="Connect automatically when a paired phone appears." on={autoReconnect} onToggle={() => setAutoReconnect(!autoReconnect)} />
-        <SetRow title="Desktop notifications" desc="Show phone notifications as Windows toasts." on={toasts} onToggle={() => setToasts(!toasts)} />
+        <div className="set-row">
+          <div className="what"><strong>{T("language")}</strong></div>
+          <div className="lang-switch">
+            {LANGS.map((l) => (
+              <button
+                key={l.id}
+                className={lang === l.id ? "lang-btn on" : "lang-btn"}
+                onClick={() => setLang(l.id)}
+                title={l.label}
+              >
+                {l.autonym}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="card">
+        <SetRow title={T("autoconnect")} desc={T("autoconnect_desc")} on={autoReconnect} onToggle={() => setAutoReconnect(!autoReconnect)} />
+        <SetRow title={T("desktop_notifs")} desc={T("desktop_notifs_desc")} on={toasts} onToggle={() => setToasts(!toasts)} />
+      </div>
+      <div className="card about-card">
+        <div className="set-row">
+          <div className="what"><strong>{T("about")}</strong><span>{T("inspired_by")}</span></div>
+        </div>
       </div>
     </div>
   );

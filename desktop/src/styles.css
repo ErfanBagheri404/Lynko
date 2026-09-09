@@ -2,7 +2,21 @@
    Lynko desktop — Link Room
    Deep neutral graphite; amber signal reserved for connection.
    Schibsted Grotesk (UI) + JetBrains Mono (data)
+   Yekan Bakh Fanum for Persian (fa)
    ============================================================ */
+
+@font-face {
+  font-family: "Yekan Bakh";
+  src: url("/yekanbakh-regular.woff") format("woff");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Yekan Bakh";
+  src: url("/yekanbakh-bold.woff") format("woff");
+  font-weight: 700;
+  font-display: swap;
+}
 
 :root {
   --paper: #16181a;
@@ -25,6 +39,7 @@
   --shadow-card: 0 8px 24px rgba(0, 0, 0, 0.35);
   --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.45);
   --font: "Schibsted Grotesk Variable", "Schibsted Grotesk", sans-serif;
+  --font-fa: "Yekan Bakh", "Schibsted Grotesk", sans-serif;
   --mono: "JetBrains Mono", monospace;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -68,6 +83,45 @@ input, button, textarea { font-family: inherit; caret-color: var(--signal); }
 
 .app {
   height: 100%;
+}
+
+/* language switch */
+.lang-switch { display: flex; gap: 6px; }
+.lang-btn {
+  font-family: inherit;
+  font-size: 13px;
+  padding: 6px 14px;
+  border-radius: var(--radius-ctl);
+  border: 1px solid var(--line);
+  background: var(--card2);
+  color: var(--ink1);
+  cursor: pointer;
+  transition: all 0.15s var(--ease-out);
+}
+.lang-btn:hover { border-color: var(--line-strong); color: var(--ink0); }
+.lang-btn.on {
+  background: var(--signal);
+  border-color: var(--signal);
+  color: var(--signal-ink);
+  font-weight: 700;
+}
+.about-card .what span { max-width: 60ch; }
+
+/* Persian: Yekan Bakh + full RTL mirroring */
+html[lang="fa"] body,
+html[lang="fa"] .shell {
+  font-family: var(--font-fa);
+}
+html[lang="fa"] .shell,
+html[lang="fa"] .stage,
+html[lang="fa"] .rail {
+  direction: rtl;
+}
+html[lang="fa"] .mono,
+html[lang="fa"] [class*="addr"],
+html[lang="fa"] .pin {
+  direction: ltr;
+  unicode-bidi: embed;
 }
 
 .shell {

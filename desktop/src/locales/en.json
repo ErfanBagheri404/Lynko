@@ -1,0 +1,56 @@
+{
+  "app": {
+    "name": "lynko",
+    "tagline": "your phone, on your desktop"
+  },
+  "phone": {
+    "status_not_running": "Not running",
+    "status_waiting": "Live — waiting for your desktop",
+    "status_subtitle_waiting": "Desktop app should now list this phone. Pair from there.",
+    "status_subtitle_idle": "Tap Start to advertise on your Wi-Fi and accept a desktop pair request.",
+    "requires": "Requires",
+    "perm_screen": "Screen capture consent — for mirroring",
+    "perm_a11y": "Accessibility service — for remote taps and swipes",
+    "perm_notif": "Notification access — to forward notifications",
+    "start": "Start Lynko",
+    "stop": "Stop Lynko",
+    "grant_a11y": "Enable in Settings"
+  },
+  "desktop": {
+    "nav_devices": "Devices",
+    "nav_screen": "Screen",
+    "nav_clipboard": "Clipboard",
+    "nav_files": "Files",
+    "nav_notifications": "Notifications",
+    "nav_audio": "Audio",
+    "nav_settings": "Settings",
+    "scan": "Rescan",
+    "no_devices": "No phones found. Start Lynko on your phone and rescan.",
+    "pair": "Pair",
+    "connect": "Connect",
+    "disconnect": "Disconnect",
+    "connected": "Connected",
+    "pair_failed": "Pair failed",
+    "connect_failed": "Connect failed",
+    "send_before_connect": "Connect a phone first",
+    "rotate": "Rotate",
+    "fullscreen": "Fullscreen",
+    "type_on_phone": "Type on the phone…",
+    "paste_placeholder": "Paste something…",
+    "copy": "Copy",
+    "send": "Send",
+    "drop_files": "Drop files here — they land in the phone's Downloads",
+    "browse": "Browse…",
+    "transfer_done": "Sent",
+    "transfer_failed": "Failed",
+    "no_notifications": "Notifications from your phone appear here.",
+    "no_audio": "Audio from your phone plays here once connected.",
+    "lang": "Language"
+  },
+  "settings": {
+    "language": "Language",
+    "about": "About",
+    "inspired_by": "Design inspired by LocalSend (localsend.org), Apache-2.0.",
+    "version": "Version"
+  }
+}

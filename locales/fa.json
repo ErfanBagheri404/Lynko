@@ -1,0 +1,62 @@
+{
+  "app": {
+    "name": "لینکو",
+    "tagline": "گوشی‌ات، روی دسکتاپت"
+  },
+  "phone": {
+    "status_not_running": "در حال اجرا نیست",
+    "status_waiting": "فعال — در انتظار دسکتاپ شما",
+    "status_subtitle_waiting": "دسکتاپ باید الان این گوشی را ببیند. از آنجا جفت کنید.",
+    "status_subtitle_idle": "برای نمایش روی شبکه وای‌فای و پذیرش جفت‌شدن از دسکتاپ، شروع را بزنید.",
+    "requires": "نیازمندی‌ها",
+    "perm_screen": "مجوز ضبط صفحه — برای آینه‌کردن",
+    "perm_a11y": "سرویس دسترس‌پذیری — برای لمس و کشیدن از راه دور",
+    "perm_notif": "دسترسی اعلان‌ها — برای ارسال اعلان‌ها",
+    "start": "شروع لینکو",
+    "stop": "توقف لینکو",
+    "grant_a11y": "فعال‌سازی در تنظیمات"
+  },
+  "desktop": {
+    "nav_devices": "دستگاه‌ها",
+    "nav_screen": "نمایش",
+    "nav_clipboard": "کلیپ‌بورد",
+    "nav_files": "فایل‌ها",
+    "nav_notifications": "اعلان‌ها",
+    "nav_audio": "صدا",
+    "nav_settings": "تنظیمات",
+    "scan": "جستجوی دوباره",
+    "no_devices": "گوشی پیدا نشد. لینکو را روی گوشی شروع کنید و دوباره جستجو کنید.",
+    "pair": "جفت‌کردن",
+    "connect": "اتصال",
+    "disconnect": "قطع اتصال",
+    "connected": "متصل شد",
+    "pair_failed": "جفت‌کردن ناموفق",
+    "connect_failed": "اتصال ناموفق",
+    "send_before_connect": "اول یک گوشی متصل کنید",
+    "rotate": "چرخش",
+    "fullscreen": "تمام‌صفحه",
+    "type_on_phone": "تایپ روی گوشی…",
+    "paste_placeholder": "چیزی بچسبانید…",
+    "copy": "کپی",
+    "send": "ارسال",
+    "drop_files": "فایل‌ها را اینجا رها کنید — در پوشه Downloads گوشی ذخیره می‌شوند",
+    "browse": "انتخاب فایل…",
+    "transfer_done": "ارسال شد",
+    "transfer_failed": "ناموفق",
+    "no_notifications": "اعلان‌های گوشی اینجا نمایش داده می‌شوند.",
+    "no_audio": "صدای گوشی پس از اتصال اینجا پخش می‌شود.",
+    "lang": "زبان"
+  },
+  "settings": {
+    "language": "زبان",
+    "settings_title": "تنظیمات",
+    "settings_sub": "لینکو هر چیزی را که روشن کنید به خاطر می‌سپارد.",
+    "autoconnect": "اتصال خودکار گوشی‌های جفت‌شده",
+    "autoconnect_desc": "وقتی گوشی جفت‌شده ظاهر شود خودکار وصل شو.",
+    "desktop_notifs": "اعلان‌های دسکتاپ",
+    "desktop_notifs_desc": "اعلان‌های گوشی را به‌صورت اعلان ویندوز نشان بده.",
+    "about": "درباره",
+    "inspired_by": "طراحی الهام‌گرفته از LocalSend (localsend.org)، Apache-2.0.",
+    "version": "نسخه"
+  }
+}
