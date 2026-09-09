@@ -40,13 +40,33 @@ class LinkService : Service() {
     private val screenSession = AtomicReference<ScreenSession?>(null)
     private val audioSession = AtomicReference<AudioSession?>(null)
 
+    /** ALL binary link traffic funnels through this lock — screen frames and
+     * audio chunks arrive from different threads and concurrent ws.send()
+     * interleaves the writes, corrupting the frame stream (client drops). */
+    private val sendLock = Any()
+
+    private fun broadcastBinary(frame: ByteArray) {
+        val server = linkServer ?: return
+        val conns = server.connections.toList()
+        synchronized(sendLock) {
+            for (ws in conns) {
+                if (ws.isOpen) ws.send(frame)
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         startForeground()
         running = true
         pairingServer = PairingServer(PAIR_PORT)
         pairingServer.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
-        linkServer = LinkServer(LINK_PORT).also { it.start() }
+        linkServer = LinkServer(LINK_PORT).also {
+            // Screen+audio bursts can exceed the default 60s idle window on
+            // slow links; widen it so the server never drops a live desktop.
+            it.connectionLostTimeout = 300
+            it.start()
+        }
         advertise()
         Log.i(TAG, "link service up: pair=$PAIR_PORT link=$LINK_PORT")
     }
@@ -325,13 +345,26 @@ class LinkService : Service() {
         val old = screenSession.getAndSet(null)
         old?.stop()
         val session = ScreenSession(applicationContext, proj) { jpeg ->
-            val msg = java.nio.ByteBuffer.allocateDirect(3 + jpeg.size)
-            msg.put("LV1".toByteArray())
-            msg.put(jpeg)
-            msg.flip()
-            linkServer?.broadcast(msg)
+            val frame = ByteArray(3 + jpeg.size)
+            "LV1".toByteArray().copyInto(frame)
+            jpeg.copyInto(frame, 3)
+            broadcastBinary(frame)
         }
-        session.start()
+        try {
+            session.start()
+        } catch (e: Exception) {
+            Log.e(TAG, "screen start failed — resetting projection + re-consent", e)
+            projection?.stop()
+            projection = null
+            ScreenPermission.invalidate()
+            session.stop()
+            screenSession.set(null)
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                ScreenPermission.requestFromService(this@LinkService)
+            }
+            sendEvent(conn, "log", JSONObject().put("msg", "screen consent expired — re-consent on phone"))
+            return
+        }
         screenSession.set(session)
         sendEvent(conn, "log", JSONObject().put("msg", "screen streaming"))
     }
@@ -350,10 +383,23 @@ class LinkService : Service() {
         old?.stop()
         val session = AudioSession(
             proj,
-            broadcast = { ws, s -> ws.send(s) },
-            getConns = { linkServer?.getConnections()?.toList() ?: emptyList() },
+            sendBinary = { frame -> broadcastBinary(frame) },
         )
-        session.start()
+        try {
+            session.start()
+        } catch (e: Exception) {
+            Log.e(TAG, "audio start failed — resetting projection + re-consent", e)
+            projection?.stop()
+            projection = null
+            ScreenPermission.invalidate()
+            session.stop()
+            audioSession.set(null)
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                ScreenPermission.requestFromService(this@LinkService)
+            }
+            sendEvent(conn, "log", JSONObject().put("msg", "audio needs fresh screen consent on phone"))
+            return
+        }
         audioSession.set(session)
         sendEvent(conn, "log", JSONObject().put("msg", "audio streaming"))
     }

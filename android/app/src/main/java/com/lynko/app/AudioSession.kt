@@ -15,8 +15,7 @@ import org.json.JSONObject
  */
 class AudioSession(
     private val projection: MediaProjection,
-    private val broadcast: (org.java_websocket.WebSocket, String) -> Unit,
-    private val getConns: () -> Collection<org.java_websocket.WebSocket>,
+    private val sendBinary: (ByteArray) -> Unit,
 ) {
     companion object {
         const val TAG = "lynko-audio"
@@ -97,9 +96,7 @@ class AudioSession(
         header[9] = ((sampleCount shr 16) and 0xFF).toByte()
         header[10] = ((sampleCount shr 24) and 0xFF).toByte()
         val frame = header + pcm
-        for (ws in getConns()) {
-            ws.send(frame) // binary, same channel as screen frames
-        }
+        sendBinary(frame) // locked funnel in LinkService — never concurrent ws.send
     }
 
     fun stop() {

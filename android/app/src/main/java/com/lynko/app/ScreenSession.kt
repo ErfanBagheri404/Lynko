@@ -12,21 +12,28 @@ import android.util.Log
 import java.io.ByteArrayOutputStream
 
 /** MediaProjection capture -> JPEG frames. Projection is created ONCE by
- * LinkService (consent tokens are single-use) and passed in here. */
+ * LinkService (consent tokens are single-use) and passed in here.
+ *
+ * Threading: ALL teardown runs on the frame handler thread — closing the
+ * reader from another thread while a callback is mid-copy segfaults
+ * (Bitmap_copyPixelsFromBuffer use-after-free). Posting teardown to the
+ * same looper serializes it after any in-flight frame callback. */
 class ScreenSession(
     context: Context,
     private val projection: MediaProjection,
     private val onFrame: (ByteArray) -> Unit,
 ) {
     private val metrics = context.resources.displayMetrics
-    private val width = metrics.widthPixels
-    private val height = metrics.heightPixels
-    private val density = metrics.densityDpi
+    // Half resolution: full 1344x2992 JPEGs flood the WS send queue over
+    // slow links and Java-WebSocket drops the connection (buffer overflow).
+    private val width = metrics.widthPixels / 2
+    private val height = metrics.heightPixels / 2
+    private val density = metrics.densityDpi / 2
+    private var lastFrameAt = 0L
 
     private var virtualDisplay: android.hardware.display.VirtualDisplay? = null
     private var reader: ImageReader? = null
     private var thread: HandlerThread? = null
-    private var registered = false
 
     @Volatile private var running = false
 
@@ -41,12 +48,21 @@ class ScreenSession(
         r.setOnImageAvailableListener({ rr ->
             val img = rr.acquireLatestImage() ?: return@setOnImageAvailableListener
             try {
+                // ~3 fps cap: drop whatever arrives faster than 300ms apart
+                val now = System.currentTimeMillis()
+                if (now - lastFrameAt < 300) return@setOnImageAvailableListener
+                lastFrameAt = now
+                val plane = img.planes[0]
+                val buffer = plane.buffer
+                buffer.rewind()
                 val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                bitmap.copyPixelsFromBuffer(img.planes[0].buffer)
+                bitmap.copyPixelsFromBuffer(buffer)
                 val baos = ByteArrayOutputStream()
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 60, baos)
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 50, baos)
                 bitmap.recycle()
                 if (running) onFrame(baos.toByteArray())
+            } catch (e: Exception) {
+                Log.w("lynko", "frame encode failed: ${e.message}")
             } finally {
                 img.close()
             }
@@ -62,6 +78,16 @@ class ScreenSession(
     }
 
     fun stop() {
+        val h = thread?.looper?.let { Handler(it) }
+        if (h != null) {
+            h.post { teardown() }
+        } else {
+            teardown()
+        }
+    }
+
+    /** Runs on the lynko-frames looper — after any in-flight callback. */
+    private fun teardown() {
         running = false
         virtualDisplay?.release()
         virtualDisplay = null
