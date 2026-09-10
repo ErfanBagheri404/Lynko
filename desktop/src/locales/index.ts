@@ -9,7 +9,7 @@ const bundles: Record<Lang, typeof en> = { en, fa };
  * Dot-path lookup, e.g. t("nav_devices").
  * Falls back to English, then the key itself — missing keys never crash.
  */
-export function t(lang: Lang, section: "desktop" | "settings", key: string): string {
+export function t(lang: Lang, section: "desktop" | "settings" | "toasts" | "phone", key: string): string {
   const b = bundles[lang]?.[section] as Record<string, string> | undefined;
   const v = b?.[key];
   if (typeof v === "string" && v.length > 0) return v;

@@ -20,6 +20,10 @@ import androidx.core.app.ActivityCompat
  */
 class MainActivity : AppCompatActivity() {
 
+    private companion object {
+        const val PIN = "1234"
+    }
+
     private lateinit var statusDot: View
     private lateinit var statusTitle: TextView
     private lateinit var statusSub: TextView
@@ -38,6 +42,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        Loc.init(this)
 
         statusDot = findViewById(R.id.statusDot)
         statusTitle = findViewById(R.id.statusTitle)
@@ -79,8 +84,8 @@ class MainActivity : AppCompatActivity() {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 101)
         }
         // MediaProjection consent must precede the FGS of that type (API 34+)
-        statusTitle.text = "Waiting for screen consent…"
-        statusSub.text = "Accept the screen-share prompt so the desktop can mirror this phone."
+        statusTitle.text = Loc.t("phone", "consent_wait")
+        statusSub.text = Loc.t("phone", "consent_wait_sub")
         ScreenPermission.request(this)
     }
 
@@ -100,16 +105,16 @@ class MainActivity : AppCompatActivity() {
     private fun renderState() {
         if (LinkService.running) {
             statusDot.setBackgroundResource(R.drawable.dot_live)
-            statusTitle.text = "Live — waiting for your desktop"
-            statusSub.text = "Advertising ${android.os.Build.MODEL} on your local network. Pair from the desktop app with PIN 1234."
-            startBtn.text = "Stop Lynko"
+            statusTitle.text = Loc.t("phone", "status_waiting")
+            statusSub.text = Loc.t("phone", "status_advertising").replace("{model}", android.os.Build.MODEL)
+            startBtn.text = Loc.t("phone", "stop")
             pinText.visibility = View.VISIBLE
-            pinText.text = "Pairing PIN  1234"
+            pinText.text = Loc.t("phone", "pin").replace("{pin}", PIN)
         } else {
             statusDot.setBackgroundResource(R.drawable.dot_idle)
-            statusTitle.text = "Not running"
-            statusSub.text = "Tap Start to advertise on your Wi-Fi and accept a desktop pair request."
-            startBtn.text = "Start Lynko"
+            statusTitle.text = Loc.t("phone", "status_not_running")
+            statusSub.text = Loc.t("phone", "status_subtitle_idle")
+            startBtn.text = Loc.t("phone", "start")
             startBtn.isEnabled = true
             pinText.visibility = View.GONE
         }
@@ -134,9 +139,9 @@ class MainActivity : AppCompatActivity() {
             text.paint.isStrikeThruText = ok
             text.text = label
         }
-        bind(permScreen, permScreenIcon, permScreenText, ScreenPermission.isGranted, "Screen capture — for mirroring")
-        bind(permA11y, permA11yIcon, permA11yText, a11yOk, "Accessibility service — for remote taps and swipes")
-        bind(permNotif, permNotifIcon, permNotifText, notifOk, "Notification access — to forward notifications")
+        bind(permScreen, permScreenIcon, permScreenText, ScreenPermission.isGranted, Loc.t("phone", "perm_screen"))
+        bind(permA11y, permA11yIcon, permA11yText, a11yOk, Loc.t("phone", "perm_a11y"))
+        bind(permNotif, permNotifIcon, permNotifText, notifOk, Loc.t("phone", "perm_notif"))
     }
 
     private val drawableOk: android.graphics.drawable.Drawable? by lazy {
@@ -149,8 +154,8 @@ class MainActivity : AppCompatActivity() {
         if (requestCode == 9001) {
             if (ScreenPermission.isGranted) startLinkService()
             else {
-                statusTitle.text = "Screen permission denied"
-                statusSub.text = "Mirroring needs screen-share consent. Tap Start to try again."
+                statusTitle.text = Loc.t("phone", "perm_denied")
+                statusSub.text = Loc.t("phone", "perm_denied_sub")
             }
         }
     }

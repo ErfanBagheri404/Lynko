@@ -20,7 +20,7 @@
             android:layout_marginTop="48dp"
             android:text="lynko"
             android:textColor="#FFB454"
-            android:fontFamily="@font/schibsted"
+            android:fontFamily="@font/lynko_ui"
             android:textSize="32sp"
             android:textStyle="bold"
             android:letterSpacing="-0.03" />
@@ -32,7 +32,7 @@
             android:layout_marginTop="4dp"
             android:text="your phone, on your desktop"
             android:textColor="#9BA0A6"
-            android:fontFamily="@font/schibsted"
+            android:fontFamily="@font/lynko_ui"
             android:textSize="14sp" />
 
         <!-- status card -->
@@ -64,7 +64,7 @@
                     android:layout_marginStart="10dp"
                     android:text="Not running"
                     android:textColor="#E8EAED"
-                    android:fontFamily="@font/schibsted"
+                    android:fontFamily="@font/lynko_ui"
                     android:textSize="16sp"
                     android:textStyle="bold" />
             </LinearLayout>
@@ -76,7 +76,7 @@
                 android:layout_marginTop="6dp"
                 android:text="Tap Start to advertise on your Wi-Fi and accept a desktop pair request."
                 android:textColor="#9BA0A6"
-                android:fontFamily="@font/schibsted"
+                android:fontFamily="@font/lynko_ui"
                 android:textSize="13sp"
                 android:lineSpacingExtra="3dp" />
         </LinearLayout>
@@ -88,7 +88,7 @@
             android:layout_marginTop="28dp"
             android:text="Requires"
             android:textColor="#6C7178"
-            android:fontFamily="@font/schibsted"
+            android:fontFamily="@font/lynko_ui"
             android:textSize="12sp"
             android:textStyle="bold"
             android:letterSpacing="0.08" />
@@ -118,7 +118,7 @@
                 android:layout_marginStart="10dp"
                 android:text="Screen capture consent — for mirroring"
                 android:textColor="#9BA0A6"
-                android:fontFamily="@font/schibsted"
+                android:fontFamily="@font/lynko_ui"
                 android:textSize="14sp" />
         </LinearLayout>
 
@@ -147,7 +147,7 @@
                 android:layout_marginStart="10dp"
                 android:text="Accessibility service — for remote taps and swipes"
                 android:textColor="#9BA0A6"
-                android:fontFamily="@font/schibsted"
+                android:fontFamily="@font/lynko_ui"
                 android:textSize="14sp" />
         </LinearLayout>
 
@@ -176,7 +176,7 @@
                 android:layout_marginStart="10dp"
                 android:text="Notification access — to forward notifications"
                 android:textColor="#9BA0A6"
-                android:fontFamily="@font/schibsted"
+                android:fontFamily="@font/lynko_ui"
                 android:textSize="14sp" />
         </LinearLayout>
 
@@ -188,7 +188,7 @@
             android:layout_marginTop="36dp"
             android:text="Start Lynko"
             android:textColor="#1A1006"
-            android:fontFamily="@font/schibsted"
+            android:fontFamily="@font/lynko_ui"
             android:textSize="16sp"
             android:textStyle="bold"
             android:background="@drawable/btn_amber"
@@ -203,7 +203,7 @@
             android:gravity="center"
             android:text=""
             android:textColor="#9BA0A6"
-            android:fontFamily="@font/schibsted"
+            android:fontFamily="@font/lynko_ui"
             android:textSize="13sp"
             android:visibility="gone" />
 

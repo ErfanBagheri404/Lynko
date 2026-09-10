@@ -282,7 +282,7 @@ function Shell(props: ShellProps) {
           onClick={() => !link.connected && setView("devices")}
         >
           <span className="dot" />
-          {link.connected ? (connectedDevice?.name ?? "phone") : "not connected"}
+          {link.connected ? (connectedDevice?.name ?? "phone") : T("not_connected")}
         </button>
         {link.connected && battery && (
           <span className="conn-chip">
@@ -337,36 +337,37 @@ function NavItem({ view, setView, id, label, Icon, badge }: {
 /* Devices                                                              */
 /* ------------------------------------------------------------------ */
 
-function DevicesView({ devices, link, toast }: ShellProps) {
+function DevicesView({ devices, link, toast, lang }: ShellProps) {
+  const T = (k: string) => tr(lang, "desktop", k);
   const scan = async () => {
     try {
       const found = await api.invoke<Device[]>("list_devices");
-      toast(`Found ${found.length} device(s)`, "ok");
-    } catch (e) { toast(`Scan failed: ${e}`, "err"); }
+      toast(tr(lang, "toasts", "found_devices").replace("{n}", String(found.length)), "ok");
+    } catch (e) { toast(tr(lang, "toasts", "scan_failed").replace("{e}", String(e)), "err"); }
   };
 
   const pair = async (d: Device) => {
     try {
       await api.invoke("pair_device", { deviceId: d.id, pin: "1234", desktopName: "Desktop" });
-      toast(`Paired ${d.name}`, "ok");
-    } catch (e) { toast(`Pair failed: ${e}`, "err"); }
+      toast(tr(lang, "toasts", "paired").replace("{name}", d.name), "ok");
+    } catch (e) { toast(tr(lang, "toasts", "pair_failed").replace("{e}", String(e)), "err"); }
   };
 
   const connect = async (d: Device) => {
     try {
       await api.invoke("connect", { deviceId: d.id });
-      toast(`Connecting to ${d.name}…`, "info");
-    } catch (e) { toast(`Connect failed: ${e}`, "err"); }
+      toast(tr(lang, "toasts", "connecting").replace("{name}", d.name), "info");
+    } catch (e) { toast(tr(lang, "toasts", "connect_failed").replace("{e}", String(e)), "err"); }
   };
 
   const disconnect = async () => {
     await api.invoke("disconnect");
-    toast("Disconnected", "info");
+    toast(tr(lang, "toasts", "disconnected"), "info");
   };
 
   const forget = async (d: Device) => {
     await api.invoke("forget_device", { deviceId: d.id });
-    toast(`Forgot ${d.name}`, "info");
+    toast(tr(lang, "toasts", "forgot").replace("{name}", d.name), "info");
   };
 
   const paired = devices.filter((d) => d.paired);
@@ -374,12 +375,12 @@ function DevicesView({ devices, link, toast }: ShellProps) {
 
   return (
     <div className="view">
-      <PageHead title="The link room" sub="Every Lynko phone on this network. Pair once, stays remembered." />
+      <PageHead title={T("link_room")} sub={T("link_room_sub")} />
 
       <div className="discover">
         <div className="card radar">
-          <h2>Discovery radar</h2>
-          <p className="desc">Phones advertise themselves on the network via mDNS.</p>
+          <h2>{T("radar")}</h2>
+          <p className="desc">{T("radar_desc")}</p>
           <div className="radar-world">
             <div className="ring r1" /><div className="ring r2" /><div className="ring r3" /><div className="radar-core" />
             {devices.map((d, i) => {
@@ -401,14 +402,14 @@ function DevicesView({ devices, link, toast }: ShellProps) {
           </div>
           <div className="radar-foot">
             <strong>{devices.length}</strong> phone(s)
-            <button className="btn sm ghost" onClick={scan}>Scan</button>
+            <button className="btn sm ghost" onClick={scan}>{T("scan")}</button>
           </div>
         </div>
 
         <div className="stack">
           <div className="card">
-            <h2>Paired phones</h2>
-            {paired.length === 0 ? <p className="empty-inline">Nothing paired yet.</p> : paired.map((d) => (
+            <h2>{T("paired_phones")}</h2>
+            {paired.length === 0 ? <p className="empty-inline">{T("nothing_paired")}</p> : paired.map((d) => (
               <div key={d.id} className="devrow">
                 <span className={d.online ? "dev-dot on" : "dev-dot off"} />
                 <div className="who">
@@ -418,10 +419,10 @@ function DevicesView({ devices, link, toast }: ShellProps) {
                 <div className="act">
                   {d.online && (
                     link.connected && link.device_id === d.id
-                      ? <button className="btn sm" onClick={disconnect}>Disconnect</button>
-                      : <button className="btn sm primary" onClick={() => connect(d)}>Connect</button>
+                      ? <button className="btn sm" onClick={disconnect}>{T("disconnect")}</button>
+                      : <button className="btn sm primary" onClick={() => connect(d)}>{T("connect")}</button>
                   )}
-                  <button className="btn sm ghost" onClick={() => forget(d)}>Forget</button>
+                  <button className="btn sm ghost" onClick={() => forget(d)}>{T("forget")}</button>
                 </div>
               </div>
             ))}
@@ -429,23 +430,23 @@ function DevicesView({ devices, link, toast }: ShellProps) {
 
           {unpaired.length > 0 && (
             <div className="card">
-              <h2>Found (not paired)</h2>
+              <h2>{T("found")}</h2>
               {unpaired.map((d) => (
                 <div key={d.id} className="devrow">
                   <span className="dev-dot on" />
                   <div className="who"><strong>{d.name}</strong><span className="addr">{d.address}</span></div>
-                  <button className="btn sm primary" onClick={() => pair(d)}>Pair</button>
+                  <button className="btn sm primary" onClick={() => pair(d)}>{T("pair")}</button>
                 </div>
               ))}
             </div>
           )}
 
           <div className="card">
-            <h2>First time on a phone?</h2>
+            <h2>{T("first_time")}</h2>
             <ol className="steps">
-              <li>Install Lynko from GitHub Releases.</li>
-              <li>Grant permissions when asked.</li>
-              <li>It appears here — scan if it doesn't show.</li>
+              <li>{T("step1")}</li>
+              <li>{T("step2")}</li>
+              <li>{T("step3")}</li>
             </ol>
           </div>
         </div>
@@ -459,7 +460,8 @@ function DevicesView({ devices, link, toast }: ShellProps) {
 /* ------------------------------------------------------------------ */
 
 function ScreenView(props: ShellProps) {
-  const { link, connectedDevice, toast } = props;
+  const { link, connectedDevice, toast, lang } = props;
+  const T = (k: string) => tr(lang, "desktop", k);
   const [streaming, setStreaming] = useState(false);
   const [frame, setFrame] = useState<string | null>(null);
   const [frameCount, setFrameCount] = useState(0);
@@ -484,7 +486,7 @@ function ScreenView(props: ShellProps) {
     try {
       await api.invoke("screen_start");
       setStreaming(true);
-      toast("Screen stream starting…", "info");
+      toast(tr(lang, "desktop", "screen_starting"), "info");
     } catch (e) { toast(`Stream failed: ${e}`, "err"); }
   };
 
@@ -493,7 +495,7 @@ function ScreenView(props: ShellProps) {
       await api.invoke("screen_stop");
       setStreaming(false);
       setFrame(null);
-      toast("Stream stopped", "info");
+      toast(tr(lang, "desktop", "stream_stopped"), "info");
     } catch (e) { toast(`Stop failed: ${e}`, "err"); }
   };
 
@@ -554,15 +556,15 @@ function ScreenView(props: ShellProps) {
     try {
       await api.invoke("inject_text", { text: textBuf });
       setTextBuf("");
-      toast("Text sent", "ok");
+      toast(tr(lang, "desktop", "text_sent"), "ok");
     } catch (e) { toast(`Send failed: ${e}`, "err"); }
   };
 
   return (
     <div className="view">
       <PageHead
-        title="Live screen"
-        sub={link.connected ? `Mirror ${connectedDevice?.name ?? "phone"} in real time` : "Connect a phone to mirror its screen."}
+        title={T("live_screen")}
+        sub={link.connected ? `${connectedDevice?.name ?? "phone"} — live` : T("mirror_off")}
       />
       <div className="screen-frame">
         <div
@@ -572,14 +574,14 @@ function ScreenView(props: ShellProps) {
           onPointerDown={(e) => { dragStart.current = norm(e); }}
           onPointerUp={onTap}
           onKeyDown={onKey}
-          title={streaming ? "Click = tap · drag = swipe · type = text" : undefined}
+          title={streaming ? T("click_tap_hint") : undefined}
         >
           {frame ? (
             <img src={frame} alt="phone screen" draggable={false} />
           ) : link.connected ? (
             <div className="no-signal">
-              <strong>{streaming ? "Waiting for frames…" : "Stream off"}</strong>
-              {streaming ? "Starting capture on the phone." : "Press Start stream."}
+              <strong>{streaming ? T("waiting_frames") : T("stream_off")}</strong>
+              {streaming ? T("starting_capture") : T("press_start")}
             </div>
           ) : (
             <div className="no-signal"><strong>No phone connected</strong>Go to Devices, connect.</div>
@@ -595,19 +597,19 @@ function ScreenView(props: ShellProps) {
           {!streaming
             ? <button className="btn primary sm" disabled={!link.connected} onClick={start}>Start stream</button>
             : <button className="btn sm" onClick={stop}>Stop</button>}
-          <button className="btn ghost sm" disabled={!link.connected} onClick={toggleRotate}>{rotated ? "Upright" : "Rotate"}</button>
-          <button className="btn ghost sm" disabled={!link.connected} onClick={toggleFullscreen}>{fullscreen ? "Exit" : "Fullscreen"}</button>
+          <button className="btn ghost sm" disabled={!link.connected} onClick={toggleRotate}>{rotated ? T("upright") : T("rotate")}</button>
+          <button className="btn ghost sm" disabled={!link.connected} onClick={toggleFullscreen}>{fullscreen ? T("exit") : T("fullscreen")}</button>
         </div>
         {streaming && (
           <div className="screen-typebar">
             <input
               className="field"
-              placeholder="Type on the phone…"
+              placeholder={T("type_on_phone")}
               value={textBuf}
               onChange={(e) => setTextBuf(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") sendText(); }}
             />
-            <button className="btn sm" onClick={sendText} disabled={!textBuf}>Send</button>
+            <button className="btn sm" onClick={sendText} disabled={!textBuf}>{T("send")}</button>
           </div>
         )}
       </div>
@@ -620,6 +622,8 @@ function ScreenView(props: ShellProps) {
 /* ------------------------------------------------------------------ */
 
 function ClipboardView(props: ShellProps) {
+  const { lang } = props;
+  const T = (k: string) => tr(lang, "desktop", k);
   const { link, clipItems, setClipItems, toast } = props;
   const [draft, setDraft] = useState("");
 
@@ -629,25 +633,25 @@ function ClipboardView(props: ShellProps) {
       await api.invoke("send_copy", { text: draft });
       setClipItems((c) => [{ id: ++toastUid, text: draft, source: "pc" as const, at: Date.now() }, ...c].slice(0, 30));
       setDraft("");
-      toast("Clipboard sent to phone", "ok");
+      toast(tr(lang, "desktop", "clipboard_sent"), "ok");
     } catch (e) { toast(`Send failed: ${e}`, "err"); }
   };
 
   const pullFromPhone = async () => {
     try {
       await api.invoke("request_paste");
-      toast("Pulling clipboard from phone…", "info");
+      toast(tr(lang, "desktop", "pulling_clipboard"), "info");
     } catch (e) { toast(`Pull failed: ${e}`, "err"); }
   };
 
   return (
     <div className="view">
-      <PageHead title="Clipboard" sub="Sync your clipboard between PC and phone." />
+      <PageHead title={T("clipboard_title")} sub={T("clipboard_sub")} />
       <div className="feature-grid">
         <div className="card">
           <h2>Send to phone</h2>
           <p className="desc">Type or paste; it lands on the phone clipboard.</p>
-          <textarea className="field" rows={4} placeholder="Paste something…" value={draft} onChange={(e) => setDraft(e.target.value)} />
+          <textarea className="field" rows={4} placeholder={T("paste_placeholder")} value={draft} onChange={(e) => setDraft(e.target.value)} />
           <div className="card-actions">
             <button className="btn primary" onClick={sendToPhone} disabled={!link.connected || !draft.trim()}><IconSend /> Send</button>
           </div>
@@ -677,6 +681,8 @@ function ClipboardView(props: ShellProps) {
 /* ------------------------------------------------------------------ */
 
 function FilesView(props: ShellProps) {
+  const { lang } = props;
+  const T = (k: string) => tr(lang, "desktop", k);
   const { link, files, toast, queueFile } = props;
   const [dragOver, setDragOver] = useState(false);
 
@@ -687,7 +693,7 @@ function FilesView(props: ShellProps) {
     e.preventDefault();
     setDragOver(false);
     const list = Array.from(e.dataTransfer.files);
-    if (!list.length && !link.connected) { toast("Connect a phone first", "err"); return; }
+    if (!list.length && !link.connected) { toast(tr(lang, "desktop", "send_before_connect"), "err"); return; }
     for (const f of list) {
       const path = (f as unknown as { path?: string }).path;
       if (!path) { toast(`${f.name}: drop files onto the app window (Tauri handles it)`, "err"); continue; }
@@ -698,7 +704,7 @@ function FilesView(props: ShellProps) {
   const browse = async () => {
     try {
       const dlg = await import("@tauri-apps/plugin-dialog");
-      const picked = await dlg.open({ multiple: true, title: "Send to phone" });
+      const picked = await dlg.open({ multiple: true, title: T("send_to_phone") });
       if (!picked) return;
       const paths = Array.isArray(picked) ? picked : [picked];
       for (const p of paths) queueFile(String(p));
@@ -707,7 +713,7 @@ function FilesView(props: ShellProps) {
 
   return (
     <div className="view">
-      <PageHead title="Files" sub="Drop files onto the phone. No cables, no cloud." />
+      <PageHead title={T("files_title")} sub={T("files_sub")} />
       <div className="card">
         <div
           className={dragOver ? "dropzone over" : "dropzone"}
@@ -751,10 +757,12 @@ function FilesView(props: ShellProps) {
 /* ------------------------------------------------------------------ */
 
 function NotificationsView(props: ShellProps) {
+  const { lang } = props;
+  const T = (k: string) => tr(lang, "desktop", k);
   const { notes } = props;
   return (
     <div className="view">
-      <PageHead title="Notifications" sub="Phone notifications land here while connected." />
+      <PageHead title={T("notif_title")} sub={T("notif_sub")} />
       <div className="card">
         {notes.length === 0 ? <p className="empty-inline">No notifications yet. Connect a phone.</p> :
           notes.map((n) => (
@@ -775,6 +783,8 @@ function NotificationsView(props: ShellProps) {
 /* ------------------------------------------------------------------ */
 
 function AudioView(props: ShellProps) {
+  const { lang } = props;
+  const T = (k: string) => tr(lang, "desktop", k);
   const { link, toast } = props;
   const [playing, setPlaying] = useState(false);
   const [chunks, setChunks] = useState(0);
@@ -823,7 +833,7 @@ function AudioView(props: ShellProps) {
       playHeadRef.current = 0;
       await api.invoke("audio_start");
       setPlaying(true);
-      toast("Audio streaming to desktop speakers", "ok");
+      toast(tr(lang, "desktop", "audio_started"), "ok");
     } catch (e) { toast(`Audio failed: ${e}`, "err"); }
   };
 
@@ -833,13 +843,13 @@ function AudioView(props: ShellProps) {
       setPlaying(false);
       queueRef.current = [];
       playHeadRef.current = 0;
-      toast("Audio stopped", "info");
+      toast(tr(lang, "desktop", "audio_stopped"), "info");
     } catch (e) { toast(`Stop failed: ${e}`, "err"); }
   };
 
   return (
     <div className="view">
-      <PageHead title="Phone audio" sub="Route phone audio through desktop speakers." />
+      <PageHead title={T("audio_title")} sub={T("audio_sub")} />
       <div className="card">
         <h2>Output</h2>
         <p className="desc">Media, calls, system sounds play on this PC.</p>
