@@ -82,65 +82,140 @@ object InputInjector {
 
     // ---- live drag (stroke continuation) --------------------------------
     // One physical drag on the desktop = one continuing stroke on the phone,
-    // replayed segment by segment as the pointer moves. DragStart puts the
-    // finger down (willContinue=true), each DragMove extends the stroke from
-    // the previous point, DragEnd sends the final segment with willContinue
-    // =false so the finger lifts exactly when the desktop mouse releases.
-    // Without this the whole drag was replayed only after pointerup — swipes
-    // felt dead until you released the mouse.
+    // replayed segment by segment as the pointer moves.
+    //
+    // continueStroke semantics: the continuation is appended to the PREVIOUS
+    // stroke's timeline and MUST be dispatched while that stroke is still
+    // running. The first implementation used 16ms segment windows — fine on
+    // LAN, fatal over VPN where packets land 50-300ms apart: the window
+    // expires, dispatchGesture rejects the orphaned continuation, the finger
+    // sticks down and every later gesture is refused. Hence:
+    //  - 500ms segment windows (tolerant of jittered arrival);
+    //  - a `gestureBusy` gate: never overlap two dispatchGestures, queue the
+    //    newest point and continue the live stroke from it;
+    //  - self-heal: if dispatchGesture returns false, close the old stroke
+    //    and restart at the latest point — the drag survives instead of dying.
 
     private var dragStroke: GestureDescription.StrokeDescription? = null
     private var dragLast: Pair<Float, Float>? = null
+    @Volatile private var gestureBusy = false
+    private var pendingMove: Pair<Float, Float>? = null
+    private var dragCtx: Context? = null
 
     fun dragStart(ctx: Context, x01: Float, y01: Float): Boolean {
         val svc = LynkoAccessibilityService.instance ?: return false
+        dragCtx = ctx.applicationContext
         val metrics = ctx.resources.displayMetrics
         val x = x01 * metrics.widthPixels
         val y = y01 * metrics.heightPixels
         val path = Path().apply { moveTo(x, y) }
         // A zero-length stroke is illegal; nudge 1px so the down registers.
         path.lineTo(x + 1f, y)
-        dragStroke = GestureDescription.StrokeDescription(path, 0, 40, true)
+        dragStroke = GestureDescription.StrokeDescription(path, 0, 500, true)
         dragLast = Pair(x01, y01)
-        val ok = svc.dispatchGesture(GestureDescription.Builder().addStroke(dragStroke!!).build(), null, null)
+        pendingMove = null
+        gestureBusy = true
+        val cb = object : AccessibilityService.GestureResultCallback() {
+            override fun onCompleted(g: GestureDescription?) { gestureBusy = false; flushPending() }
+            override fun onCancelled(g: GestureDescription?) { gestureBusy = false; flushPending() }
+        }
+        val ok = svc.dispatchGesture(
+            GestureDescription.Builder().addStroke(dragStroke!!).build(), cb, null)
+        if (!ok) gestureBusy = false
         Log.i("lynko", "dragStart ($x01,$y01) ok=$ok")
         return ok
     }
 
     fun dragMove(ctx: Context, x01: Float, y01: Float): Boolean {
         val svc = LynkoAccessibilityService.instance ?: return false
-        val prev = dragStroke ?: return false
-        val metrics = ctx.resources.displayMetrics
-        val x = x01 * metrics.widthPixels
-        val y = y01 * metrics.heightPixels
-        val (px01, py01) = dragLast ?: return false
-        val path = Path().apply {
-            moveTo(px01 * metrics.widthPixels, py01 * metrics.heightPixels)
-            lineTo(x, y)
+        if (dragStroke == null) {
+            // Chain broken mid-drag (jitter/stale stroke): re-open at the
+            // latest point so the drag continues instead of dying.
+            return dragStart(ctx, x01, y01)
         }
-        val stroke = prev.continueStroke(path, 0, 16, true)
+        if (gestureBusy) {
+            // A segment is still being delivered — keep only the newest point
+            // and continue from it when the callback fires. Stale queued
+            // points are skipped: the stroke chases the pointer, not history.
+            pendingMove = Pair(x01, y01)
+            return true
+        }
+        continueFrom(ctx, svc, x01, y01)
+        return true
+    }
+
+    private fun continueFrom(ctx: Context, svc: LynkoAccessibilityService, x01: Float, y01: Float) {
+        val prev = dragStroke
+        val last = dragLast
+        if (prev == null || last == null) return
+        val metrics = ctx.resources.displayMetrics
+        val path = Path().apply {
+            moveTo(last.first * metrics.widthPixels, last.second * metrics.heightPixels)
+            lineTo(x01 * metrics.widthPixels, y01 * metrics.heightPixels)
+        }
+        val stroke = prev.continueStroke(path, 0, 500, true)
         dragStroke = stroke
         dragLast = Pair(x01, y01)
-        val ok = svc.dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), null, null)
-        if (!ok) { dragStroke = null }
-        return ok
+        gestureBusy = true
+        val cb = object : AccessibilityService.GestureResultCallback() {
+            override fun onCompleted(g: GestureDescription?) { gestureBusy = false; flushPending() }
+            override fun onCancelled(g: GestureDescription?) { gestureBusy = false; flushPending() }
+        }
+        val ok = svc.dispatchGesture(
+            GestureDescription.Builder().addStroke(stroke).build(), cb, null)
+        if (!ok) {
+            // Window already expired: drop the dead chain; the next dragMove
+            // re-opens at the newest point via the dragStroke==null path.
+            gestureBusy = false
+            dragStroke = null
+            dragLast = Pair(x01, y01)
+        }
+    }
+
+    private fun flushPending() {
+        val ctx = dragCtx ?: return
+        val svc = LynkoAccessibilityService.instance ?: return
+        val p = pendingMove ?: return
+        pendingMove = null
+        if (dragStroke == null) { dragStart(ctx, p.first, p.second); return }
+        continueFrom(ctx, svc, p.first, p.second)
     }
 
     fun dragEnd(ctx: Context, x01: Float, y01: Float): Boolean {
         val svc = LynkoAccessibilityService.instance ?: return false
-        val prev = dragStroke ?: return false
-        val metrics = ctx.resources.displayMetrics
-        val x = x01 * metrics.widthPixels
-        val y = y01 * metrics.heightPixels
-        val (px01, py01) = dragLast ?: return false
-        val path = Path().apply {
-            moveTo(px01 * metrics.widthPixels, py01 * metrics.heightPixels)
-            lineTo(x, y)
-        }
-        val stroke = prev.continueStroke(path, 0, 16, false) // lifts the finger
+        pendingMove = null
+        val prev = dragStroke
+        val last = dragLast
         dragStroke = null
         dragLast = null
-        val ok = svc.dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), null, null)
+        dragCtx = null
+        if (prev == null || last == null) return true // nothing down: no-op
+        val metrics = ctx.resources.displayMetrics
+        val path = Path().apply {
+            moveTo(last.first * metrics.widthPixels, last.second * metrics.heightPixels)
+            lineTo(x01 * metrics.widthPixels, y01 * metrics.heightPixels)
+        }
+        val stroke = prev.continueStroke(path, 0, 100, false) // lifts the finger
+        gestureBusy = true
+        val cb = object : AccessibilityService.GestureResultCallback() {
+            override fun onCompleted(g: GestureDescription?) { gestureBusy = false }
+            override fun onCancelled(g: GestureDescription?) { gestureBusy = false }
+        }
+        val ok = svc.dispatchGesture(
+            GestureDescription.Builder().addStroke(stroke).build(), cb, null)
+        if (!ok) {
+            gestureBusy = false
+            // Last resort: a fresh tap-like stroke guarantees nothing stays
+            // pressed on the phone.
+            val lift = Path().apply {
+                moveTo(x01 * metrics.widthPixels, y01 * metrics.heightPixels)
+                lineTo(x01 * metrics.widthPixels + 1f, y01 * metrics.heightPixels)
+            }
+            svc.dispatchGesture(
+                GestureDescription.Builder()
+                    .addStroke(GestureDescription.StrokeDescription(lift, 0, 40))
+                    .build(), null, null)
+        }
         Log.i("lynko", "dragEnd ($x01,$y01) ok=$ok")
         return ok
     }
