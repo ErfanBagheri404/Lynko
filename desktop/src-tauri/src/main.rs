@@ -314,7 +314,7 @@ async fn run_link(
     mut rx: tokio_mpsc::Receiver<Message>,
     alive: Arc<AtomicBool>,
 ) {
-    use tauri::Emitter;
+    use tauri::{Emitter, Manager};
 
     let url = format!("ws://{}:{}/link", ws_host(&device.address), LINK_PORT);
     let ws_stream = match tokio_tungstenite::connect_async(&url).await {
@@ -322,6 +322,11 @@ async fn run_link(
         Err(e) => {
             let _ = app.emit("log", serde_json::json!({ "msg": format!("link failed: {e}") }));
             alive.store(false, Ordering::SeqCst);
+            let _ = app.emit("link_state", serde_json::json!({ "connected": false }));
+            // Dial failed (e.g. VPN just came up) — retry with backoff instead
+            // of silently giving up. The phone's VpnGuard recreates its
+            // listeners within ~1s of a network change.
+            spawn_reconnect(app.clone(), device.id.clone());
             return;
         }
     };
@@ -392,6 +397,46 @@ async fn run_link(
     alive.store(false, Ordering::SeqCst);
     let _ = app.emit("link_state", serde_json::json!({ "connected": false }));
     let _ = app.emit("log", serde_json::json!({ "msg": "link dropped" }));
+
+    // Auto-reconnect after a mid-session drop (VPN toggle, Wi-Fi blip, MIUI
+    // doze). `disconnect`/`forget` REPLACE the handle or clear it; a stale
+    // entry for the same device here means the drop was not user-forced.
+    // (alive was just set false at the top — the entry's mere presence for
+    // this device is what distinguishes drop from explicit disconnect.)
+    {
+        let state = app.state::<LynkoState>();
+        let link = state.link.lock().unwrap();
+        if let Some(l) = link.as_ref() {
+            if l.device_id == device.id {
+                spawn_reconnect(app.clone(), device.id.clone());
+            }
+        }
+    }
+}
+
+/// Backoff-reconnect loop for a dropped link. Stops when a fresh link takes
+/// over (connect_inner replaces the handle) or the device is forgotten.
+fn spawn_reconnect(app: AppHandle, device_id: String) {
+    tauri::async_runtime::spawn(async move {
+        let mut delay = Duration::from_secs(1);
+        loop {
+            tokio::time::sleep(delay).await;
+            let stale = {
+                let state = app.state::<LynkoState>();
+                let link = state.link.lock().unwrap();
+                match link.as_ref() {
+                    None => false,           // device forgotten / user disconnected
+                    Some(l) => l.device_id == device_id && !l.alive.load(Ordering::SeqCst),
+                }
+            };
+            if !stale { return; } // fresh link or user action — stop
+            let state = app.state::<LynkoState>();
+            match connect_inner(&state, &device_id) {
+                Ok(()) => return, // spawned a new run_link — done
+                Err(_) => { delay = std::cmp::min(delay * 2, Duration::from_secs(15)); }
+            }
+        }
+    });
 }
 
 #[tauri::command]

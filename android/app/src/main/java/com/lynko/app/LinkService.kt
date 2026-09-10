@@ -39,7 +39,7 @@ class LinkService : Service() {
             private set
     }
 
-    private lateinit var pairingServer: PairingServer
+    private var pairingServer: PairingServer? = null
     private var linkServer: LinkServer? = null
     private var transferServer: TransferServer? = null
     private var projection: android.media.projection.MediaProjection? = null
@@ -87,37 +87,27 @@ class LinkService : Service() {
         }
     }
 
-    private fun bindToWifi() {
-        // A VPN (tun0) hijacks the default route: replies to desktop pair/link
-        // requests would leave through the tunnel and never return — the
-        // mirror drops the moment a VPN comes up. Binding the process to the
-        // Wi-Fi transport keeps every Lynko socket on wlan0 while the VPN
-        // keeps covering the rest of the system. This is the same mechanism
-        // chat apps use to stay reachable behind VPNs.
-        try {
-            val cm = getSystemService(ConnectivityManager::class.java)
-            val wifi = cm.allNetworks.firstOrNull { net ->
-                cm.getNetworkCapabilities(net)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
-            }
-            if (wifi != null) {
-                cm.bindProcessToNetwork(wifi)
-                Log.i(TAG, "process bound to Wi-Fi network (VPN-transparent)")
-            } else {
-                Log.w(TAG, "no Wi-Fi network to bind — link may break while VPN is up")
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "bindProcessToNetwork failed: ${e.message}")
-        }
-    }
-
     override fun onCreate() {
         super.onCreate()
         if (running) { Log.w(TAG, "link service onCreate while already running — skipping re-init"); return }
         startForeground()
-        bindToWifi()
+        // Pin to the physical WLAN *before* creating any socket, then watch
+        // for network changes: a VPN toggle mid-mirror rebinding to tun0 is
+        // exactly what killed the link. onRebind recreates the listener
+        // sockets ON THE NEW NETWORK (pre-bind sockets keep their old route
+        // — binding alone can't move an already-listening ServerSocket).
+        VpnGuard.attach(this) { restartServers() }
         running = true
+        startServers()
+        advertise()
+        Log.i(TAG, "link service up: pair=$PAIR_PORT link=$LINK_PORT")
+    }
+
+    /** Create all three listener servers. Idempotent — called again on network
+     *  rebinds (VPN toggle, WLAN rejoin) after the old listeners are torn down. */
+    private fun startServers() {
         pairingServer = PairingServer(PAIR_PORT)
-        pairingServer.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
+        pairingServer?.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
         // LocalSend-style HTTP receive server — session-consented file pushes
         // (prepare-upload / upload / cancel). Runs beside the WS link.
         transferServer = TransferServer(
@@ -148,13 +138,13 @@ class LinkService : Service() {
                 TransferConsentHub.pending.remove(session.id)
             },
             onProgress = { fileId, written, total ->
-                Log.d("lynko", "tx $fileId: $written/$total")
+                Log.d(TAG, "tx $fileId: $written/$total")
             },
             onFileDone = { fileId, ok, path, shaOk ->
-                Log.i("lynko", "tx done $fileId ok=$ok sha=$shaOk path=$path")
+                Log.i(TAG, "tx done $fileId ok=$ok sha=$shaOk path=$path")
             },
             onSessionDone = { accepted, rejected ->
-                Log.i("lynko", "tx session done accepted=$accepted rejected=$rejected")
+                Log.i(TAG, "tx session done accepted=$accepted rejected=$rejected")
             },
         ).also { it.start(NanoHTTPD.SOCKET_READ_TIMEOUT, true) }
         linkServer = LinkServer(LINK_PORT).also {
@@ -163,8 +153,19 @@ class LinkService : Service() {
             it.connectionLostTimeout = 300
             it.start()
         }
+    }
+
+    /** VpnGuard rebind: network topology changed (VPN up/down, WLAN rejoin).
+     *  Sockets bound before the switch keep routing through the old network,
+     *  so listeners are recreated on the now-current network. The desktop
+     *  auto-reconnects; screen/audio sessions stay alive. */
+    private fun restartServers() {
+        Log.i(TAG, "network changed — restarting listener servers")
+        try { pairingServer?.stop() } catch (_: Exception) {}
+        try { transferServer?.stop() } catch (_: Exception) {}
+        try { linkServer?.stop() } catch (_: Exception) {}
+        startServers()
         advertise()
-        Log.i(TAG, "link service up: pair=$PAIR_PORT link=$LINK_PORT")
     }
 
     private fun startForeground() {
@@ -561,7 +562,8 @@ class LinkService : Service() {
     override fun onDestroy() {
         Log.w(TAG, "link service destroyed — pair/link/transfer ports closed")
         running = false
-        pairingServer.stop()
+        VpnGuard.detach()
+        pairingServer?.stop()
         transferServer?.stop()
         linkServer?.stop()
         screenSession.getAndSet(null)?.stop()
