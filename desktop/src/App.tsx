@@ -473,7 +473,6 @@ function ScreenView(props: ShellProps) {
   // CSS animation (0.45s). Never keyed by frameCount — that remounted the span
   // on every frame and restarted the animation forever ("ripple spam").
   const [ripples, setRipples] = useState<{ x: number; y: number; id: number }[]>([]);
-  const [textBuf, setTextBuf] = useState("");
   const [rotated, setRotated] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -560,15 +559,6 @@ function ScreenView(props: ShellProps) {
     } catch {}
   };
 
-  const sendText = async () => {
-    if (!textBuf) return;
-    try {
-      await api.invoke("inject_text", { text: textBuf });
-      setTextBuf("");
-      toast(tr(lang, "desktop", "text_sent"), "ok");
-    } catch (e) { toast(`Send failed: ${e}`, "err"); }
-  };
-
   return (
     <div className="view">
       <PageHead
@@ -580,9 +570,12 @@ function ScreenView(props: ShellProps) {
           className={`screen-canvas interactive${rotated ? " rotated" : ""}`}
           ref={canvasRef}
           tabIndex={link.connected && streaming ? 0 : -1}
-          onPointerDown={(e) => { dragStart.current = norm(e); }}
+          onPointerDown={(e) => {
+            dragStart.current = norm(e);
+            try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+          }}
           onPointerUp={onTap}
-          onKeyDown={onKey}
+          onKeyDown={(e) => { e.currentTarget.focus(); onKey(e); }}
           title={streaming ? T("click_tap_hint") : undefined}
         >
           {frame ? (
@@ -609,18 +602,6 @@ function ScreenView(props: ShellProps) {
           <button className="btn ghost sm" disabled={!link.connected} onClick={toggleRotate}>{rotated ? T("upright") : T("rotate")}</button>
           <button className="btn ghost sm" disabled={!link.connected} onClick={toggleFullscreen}>{fullscreen ? T("exit") : T("fullscreen")}</button>
         </div>
-        {streaming && (
-          <div className="screen-typebar">
-            <input
-              className="field"
-              placeholder={T("type_on_phone")}
-              value={textBuf}
-              onChange={(e) => setTextBuf(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") sendText(); }}
-            />
-            <button className="btn sm" onClick={sendText} disabled={!textBuf}>{T("send")}</button>
-          </div>
-        )}
       </div>
     </div>
   );

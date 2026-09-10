@@ -71,11 +71,10 @@ object InputInjector {
             moveTo(x1 * metrics.widthPixels, y1 * metrics.heightPixels)
             lineTo(x2 * metrics.widthPixels, y2 * metrics.heightPixels)
         }
-        val stroke = if (Build.VERSION.SDK_INT >= 26) {
-            GestureDescription.StrokeDescription(path, 0, 250, true)
-        } else {
-            GestureDescription.StrokeDescription(path, 0, 250)
-        }
+        // Final stroke (no willContinue): the pointer must LIFT at the end.
+        // A willContinue stroke holds the finger down awaiting a continuation
+        // gesture that never comes — apps see a pointer frozen mid-motion.
+        val stroke = GestureDescription.StrokeDescription(path, 0, 250)
         svc.dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), null, null)
         Log.i("lynko", "swipe")
         return true
