@@ -468,7 +468,9 @@ function ScreenView(props: ShellProps) {
   const T = (k: string) => tr(lang, "desktop", k);
   const [streaming, setStreaming] = useState(false);
   const [frame, setFrame] = useState<string | null>(null);
-  const [frameCount, setFrameCount] = useState(0);
+  // Frame counter kept in a ref — not state: 15fps setState re-renders the
+  // whole tree per frame. Read into the status bar via a 1s interval tick.
+  const frameCountRef = useRef(0);
   // Fire-once ripples: each tap pushes {x,y,id}; a timer removes it after the
   // CSS animation (0.45s). Never keyed by frameCount — that remounted the span
   // on every frame and restarted the animation forever ("ripple spam").
@@ -478,14 +480,32 @@ function ScreenView(props: ShellProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const dragStart = useRef<{ x: number; y: number } | null>(null);
 
-  // subscribe to JPEG frames from the Rust link layer
+  // subscribe to JPEG frames from the Rust link layer.
+  // Direct <img>.src writes — NOT React state: setState at 15fps re-renders
+  // the whole component tree per frame; a direct assignment paints the
+  // moment the frame arrives and skips reconciliation entirely.
+  const imgRef = useRef<HTMLImageElement | null>(null);
+  const frameArrived = useRef(false);
+  const [fps, setFps] = useState(0);
   useEffect(() => {
     let un: (() => void) | undefined;
     api.on<{ jpeg: string }>("screen_frame", (e) => {
-      setFrame(`data:image/jpeg;base64,${e.payload.jpeg}`);
-      setFrameCount((c) => c + 1);
+      frameCountRef.current++;
+      const el = imgRef.current;
+      if (el) {
+        el.src = `data:image/jpeg;base64,${e.payload.jpeg}`;
+      } else if (!frameArrived.current) {
+        // first frame: mount the <img> via state (one re-render, ever)
+        frameArrived.current = true;
+        setFrame(`data:image/jpeg;base64,${e.payload.jpeg}`);
+      }
     }).then((u) => { un = u; });
     return () => un?.();
+  }, []);
+  // 1s status tick: reads the ref into state at 1fps (vs 15fps re-renders before)
+  useEffect(() => {
+    const t = setInterval(() => setFps(frameCountRef.current), 1000);
+    return () => clearInterval(t);
   }, []);
 
   const start = async () => {
@@ -500,6 +520,7 @@ function ScreenView(props: ShellProps) {
     try {
       await api.invoke("screen_stop");
       setStreaming(false);
+      frameArrived.current = false;
       setFrame(null);
       toast(tr(lang, "desktop", "stream_stopped"), "info");
     } catch (e) { toast(`Stop failed: ${e}`, "err"); }
@@ -578,8 +599,8 @@ function ScreenView(props: ShellProps) {
           onKeyDown={(e) => { e.currentTarget.focus(); onKey(e); }}
           title={streaming ? T("click_tap_hint") : undefined}
         >
-          {frame ? (
-            <img src={frame} alt="phone screen" draggable={false} />
+          {frame || frameArrived.current ? (
+            <img ref={imgRef} src={frame ?? undefined} alt="phone screen" draggable={false} />
           ) : link.connected ? (
             <div className="no-signal">
               <strong>{streaming ? T("waiting_frames") : T("stream_off")}</strong>
@@ -593,7 +614,7 @@ function ScreenView(props: ShellProps) {
           ))}
         </div>
         <div className="screen-bar">
-          <span>{streaming && frameCount > 0 ? `${frameCount} frames · tap/drag/type` : link.connected ? "ready" : "idle"}</span>
+          <span>{streaming && fps > 0 ? `${fps} frames · tap/drag/type` : link.connected ? "ready" : "idle"}</span>
         </div>
         <div className="screen-toolbar">
           {!streaming

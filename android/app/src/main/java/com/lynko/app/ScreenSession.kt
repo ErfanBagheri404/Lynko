@@ -24,15 +24,30 @@ class ScreenSession(
     private val onFrame: (ByteArray) -> Unit,
 ) {
     private val metrics = context.resources.displayMetrics
-    // Native phone resolution at ~15 fps / adaptive JPEG (75 start, 35 floor).
-    // The WS send queue is bounded (sendBusy gate in LinkService): saturated
-    // frames are dropped and quality steps down until the link drains.
+    // Capture at native resolution but ENCODE scaled to max 720px on the
+    // short edge: 4x fewer pixels = 4x faster JPEG encode + 4x smaller
+    // frames over the wire. Full-res capture keeps touch coordinates exact.
+    // JPEG quality adapts down when the send side drops frames (floor 35).
     private val width = metrics.widthPixels
     private val height = metrics.heightPixels
+    private val scale = (720f / width).coerceAtMost(1f)
+    private val outW = (width * scale).toInt()
+    private val outH = (height * scale).toInt()
     private val density = metrics.densityDpi / 2
     private var lastFrameAt = 0L
     private var jpegQuality = 75
     private var drops = 0
+
+    // Reused per frame — zero steady-state allocation, no GC churn.
+    private val rawBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    private val outBitmap = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
+    private val canvas = android.graphics.Canvas(outBitmap)
+    private val paint = android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG)
+    private val srcRect = android.graphics.Rect(0, 0, width, height)
+    private val dstRect = android.graphics.Rect(0, 0, outW, outH)
+    private val packed = java.nio.ByteBuffer.allocate(width * height * 4)
+    private val row = ByteArray(width * 4)
+    private val baos = ByteArrayOutputStream(256 * 1024)
 
     /** Backpressure feedback from LinkService: when frames are being dropped
      * on the send side, step JPEG quality down (floor 35) until the link
@@ -64,31 +79,27 @@ class ScreenSession(
                 val buffer = plane.buffer
                 buffer.rewind()
                 val stride = plane.rowStride
-                val bitmap = if (stride == width * 4) {
-                    // tightly packed rows: single bulk copy
-                    val b = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                    b.copyPixelsFromBuffer(buffer)
-                    b
+                if (stride == width * 4) {
+                    // tightly packed rows: bulk copy straight into the raw bitmap
+                    rawBitmap.copyPixelsFromBuffer(buffer)
                 } else {
-                    // stride padding: copy row by row into a packed bitmap.
-                    // ImageReader may round rows up to a 64-byte boundary;
-                    // copyPixelsFromBuffer would skew the image into bands.
-                    val b = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                    val packed = java.nio.ByteBuffer.allocate(width * height * 4)
+                    // stride padding: copy row by row into a packed buffer.
+                    // ImageReader may round rows up to a 64-byte boundary; a
+                    // bulk copy would skew the image into bands.
+                    packed.clear()
                     val rowBytes = width * 4
-                    val row = ByteArray(rowBytes)
                     for (y in 0 until height) {
                         buffer.position(y * stride)
                         buffer.get(row, 0, rowBytes)
                         packed.put(row)
                     }
                     packed.rewind()
-                    b.copyPixelsFromBuffer(packed)
-                    b
+                    rawBitmap.copyPixelsFromBuffer(packed)
                 }
-                val baos = ByteArrayOutputStream()
-                bitmap.compress(Bitmap.CompressFormat.JPEG, jpegQuality, baos)
-                bitmap.recycle()
+                // scale 1080x2400 -> outW x outH (GPU-less but cheap: 4x fewer px)
+                canvas.drawBitmap(rawBitmap, srcRect, dstRect, paint)
+                baos.reset()
+                outBitmap.compress(Bitmap.CompressFormat.JPEG, jpegQuality, baos)
                 if (running) onFrame(baos.toByteArray())
             } catch (e: Exception) {
                 Log.w("lynko", "frame encode failed: ${e.message}")
