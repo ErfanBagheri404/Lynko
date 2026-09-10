@@ -358,19 +358,36 @@ class LinkService : Service() {
                 }
             }
             "key" -> {
-                val name = (d as? JSONObject)?.optString("name") ?: ""
-                // Nav keys: accessibility global action. Everything else: IME.
-                if (InputInjector.navKey(name)) {
-                    sendEvent(conn, "log", JSONObject().put("msg", "nav: $name"))
-                } else {
-                    ImeBridge.pushKey(name)
+                val name = (d as? JSONObject)?.optString("key", "") ?: ""
+                // Nav keys: accessibility global action. Editing keys: the
+                // focused field (no IME switch needed). ENTER/DEL handled by
+                // the field actions below; others fall through to nav.
+                val ok = when (name) {
+                    "ENTER", "Enter", "Return" -> InputInjector.enter()
+                    "DEL", "BACKSPACE", "Backspace" -> InputInjector.backspace()
+                    else -> InputInjector.navKey(name)
+                }
+                if (ok) {
                     sendEvent(conn, "log", JSONObject().put("msg", "key: $name"))
+                } else {
+                    val editing = name.equals("ENTER", true) || name.equals("Enter", true) ||
+                        name.equals("Return", true) || name.equals("DEL", true) ||
+                        name.equals("BACKSPACE", true) || name.equals("Backspace", true)
+                    sendEvent(conn, "input_error", JSONObject()
+                        .put("kind", if (editing) "field" else "accessibility")
+                        .put("hint", if (editing)
+                            "tap a text field in the mirror first, then type" else "enable Lynko in Settings > Accessibility"))
                 }
             }
             "text" -> {
                 val text = (d as? JSONObject)?.optString("text") ?: ""
-                ImeBridge.pushText(text)
-                sendEvent(conn, "log", JSONObject().put("msg", "text (${text.length} chars)"))
+                if (InputInjector.typeText(applicationContext, text)) {
+                    sendEvent(conn, "log", JSONObject().put("msg", "text (${text.length} chars)"))
+                } else {
+                    sendEvent(conn, "input_error", JSONObject()
+                        .put("kind", "field")
+                        .put("hint", "tap a text field in the mirror first, then type"))
+                }
             }
             "copy" -> sendEvent(conn, "clipboard", JSONObject().put("text", ClipboardBridge.read(applicationContext)))
             "file_begin" -> {

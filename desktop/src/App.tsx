@@ -170,7 +170,7 @@ export default function App() {
       } else if (ev.t === "input_error") {
         const kind = ev.d.kind as string;
         if (kind === "accessibility") toast("Taps & swipes need Accessibility: open Settings → Accessibility → Lynko → enable", "err");
-        else if (kind === "ime") toast("Typing needs the Lynko keyboard: set it as your active IME first", "err");
+        else if (kind === "field") toast("No focused text field on the phone — tap one in the mirror first", "err");
       } else if (ev.t === "notification") {
         setNotes((n) => [{ id: ++toastUid, app: ev.d.app as string, title: ev.d.title as string, body: ev.d.body as string, at: Date.now() }, ...n].slice(0, 50));
       }

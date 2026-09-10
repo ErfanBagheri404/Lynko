@@ -69,6 +69,24 @@ class MainActivity : AppCompatActivity() {
                 beginStart()
             }
         }
+
+        // Each checklist row is a shortcut to the exact system screen needed.
+        permScreen.setOnClickListener {
+            if (!ScreenPermission.isGranted) ScreenPermission.request(this)
+        }
+        permA11y.setOnClickListener { openAccessibilitySettings() }
+        permNotif.setOnClickListener {
+            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+        }
+    }
+
+    /** Deep-link into Accessibility settings with Lynko pre-highlighted when possible. */
+    private fun openAccessibilitySettings() {
+        try {
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        } catch (e: Exception) {
+            Toast.makeText(this, "Open Settings → Accessibility → Lynko", Toast.LENGTH_LONG).show()
+        }
     }
 
     override fun onResume() {

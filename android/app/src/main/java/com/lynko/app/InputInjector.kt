@@ -96,4 +96,100 @@ object InputInjector {
         }
         return svc.performGlobalAction(action)
     }
+
+    /** Type `text` into whatever field is currently focused — no Lynko IME.
+     * Reads the node's existing text and appends (covers the common empty or
+     * tap-at-end case; there is no reliable cursor index via accessibility). */
+    fun typeText(ctx: Context, text: String): Boolean {
+        val node = focusedEditable() ?: run {
+            Log.w("lynko", "type ignored — no focused input field")
+            return false
+        }
+        val cur = node.text?.toString() ?: ""
+        val args = android.os.Bundle().apply {
+            putCharSequence(
+                android.view.accessibility.AccessibilityNodeInfo
+                    .ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, cur + text
+            )
+        }
+        val ok = node.performAction(
+            android.view.accessibility.AccessibilityNodeInfo.ACTION_SET_TEXT, args
+        )
+        node.recycle()
+        Log.i("lynko", "typeText set=$ok (${text.length} chars)")
+        return ok
+    }
+
+    /** Backspace: drop the last character of the focused field's text. */
+    fun backspace(): Boolean {
+        val node = focusedEditable() ?: return false
+        val cur = node.text?.toString() ?: ""
+        if (cur.isEmpty()) { node.recycle(); return true }
+        val args = android.os.Bundle().apply {
+            putCharSequence(
+                android.view.accessibility.AccessibilityNodeInfo
+                    .ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, cur.dropLast(1)
+            )
+        }
+        val ok = node.performAction(
+            android.view.accessibility.AccessibilityNodeInfo.ACTION_SET_TEXT, args
+        )
+        node.recycle()
+        return ok
+    }
+
+    /** Enter: commit via the IME action the editor exposes (send/search/go).
+     * Falls back to appending a newline for true multiline fields. */
+    fun enter(): Boolean {
+        val node = focusedEditable() ?: return false
+        var ok = false
+        // ACTION_IME_ENTER exists at runtime on API 33+; read by reflection so
+        // older compile SDKs don't break the build.
+        if (Build.VERSION.SDK_INT >= 33) {
+            try {
+                val id = android.view.accessibility.AccessibilityNodeInfo::class.java
+                    .getField("ACTION_IME_ENTER").getInt(null)
+                ok = node.performAction(id)
+            } catch (e: Exception) { ok = false }
+        }
+        if (!ok) ok = typeTextToNode(node, "\n")
+        node.recycle()
+        return ok
+    }
+
+    private fun typeTextToNode(node: android.view.accessibility.AccessibilityNodeInfo, add: String): Boolean {
+        val cur = node.text?.toString() ?: ""
+        val args = android.os.Bundle().apply {
+            putCharSequence(
+                android.view.accessibility.AccessibilityNodeInfo
+                    .ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, cur + add
+            )
+        }
+        return node.performAction(
+            android.view.accessibility.AccessibilityNodeInfo.ACTION_SET_TEXT, args
+        )
+    }
+
+    private fun focusedEditable(): android.view.accessibility.AccessibilityNodeInfo? {
+        val svc = LynkoAccessibilityService.instance ?: return null
+        val root = svc.rootInActiveWindow ?: return null
+        var focused = root.findFocus(android.view.accessibility
+            .AccessibilityNodeInfo.FOCUS_INPUT)
+        if (focused == null) {
+            focused = findEditable(root)
+        }
+        root.recycle()
+        return focused
+    }
+
+    private fun findEditable(node: android.view.accessibility.AccessibilityNodeInfo): android.view.accessibility.AccessibilityNodeInfo? {
+        if (node.isEditable) return node
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val found = findEditable(child)
+            if (found != null) return found
+            child.recycle()
+        }
+        return null
+    }
 }
