@@ -1,6 +1,7 @@
 package com.lynko.app
 
 import android.Manifest
+import android.content.Context
 import android.provider.Settings
 import android.widget.LinearLayout
 import android.content.Intent
@@ -35,6 +36,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var permA11y: LinearLayout
     private lateinit var permA11yIcon: TextView
     private lateinit var permA11yText: TextView
+    private lateinit var permBattery: LinearLayout
+    private lateinit var permBatteryIcon: TextView
+    private lateinit var permBatteryText: TextView
     private lateinit var permNotif: LinearLayout
     private lateinit var permNotifIcon: TextView
     private lateinit var permNotifText: TextView
@@ -57,6 +61,9 @@ class MainActivity : AppCompatActivity() {
         permA11y = findViewById(R.id.permA11y)
         permA11yIcon = findViewById(R.id.permA11yIcon)
         permA11yText = findViewById(R.id.permA11yText)
+        permBattery = findViewById(R.id.permBattery)
+        permBatteryIcon = findViewById(R.id.permBatteryIcon)
+        permBatteryText = findViewById(R.id.permBatteryText)
         permNotif = findViewById(R.id.permNotif)
         permNotifIcon = findViewById(R.id.permNotifIcon)
         permNotifText = findViewById(R.id.permNotifText)
@@ -76,6 +83,7 @@ class MainActivity : AppCompatActivity() {
             if (!ScreenPermission.isGranted) ScreenPermission.request(this)
         }
         permA11y.setOnClickListener { openAccessibilitySettings() }
+        permBattery.setOnClickListener { openBatterySettings() }
         permNotif.setOnClickListener {
             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
         }
@@ -96,6 +104,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun beginStart() {
+        // Accessibility is REQUIRED for taps/swipes/typing. Gate the start
+        // flow on it so nobody runs a link that can't be controlled.
+        if (!LynkoAccessibilityService.enabled(this)) {
+            Toast.makeText(this, Loc.t("phone", "perm_a11y_needed"), Toast.LENGTH_LONG).show()
+            openAccessibilitySettings()
+            return
+        }
         // Notification permission first (Android 13+)
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
@@ -160,7 +175,28 @@ class MainActivity : AppCompatActivity() {
         }
         bind(permScreen, permScreenIcon, permScreenText, ScreenPermission.isGranted, Loc.t("phone", "perm_screen"))
         bind(permA11y, permA11yIcon, permA11yText, a11yOk, Loc.t("phone", "perm_a11y"))
+        // MIUI kills the process at lock-screen unless battery optimizations
+        // are ignored — and that kill is what resets the a11y grant.
+        val battOk = if (Build.VERSION.SDK_INT >= 23)
+            (getSystemService(Context.POWER_SERVICE) as android.os.PowerManager)
+                .isIgnoringBatteryOptimizations(packageName) else true
+        bind(permBattery, permBatteryIcon, permBatteryText, battOk, Loc.t("phone", "perm_battery"))
         bind(permNotif, permNotifIcon, permNotifText, notifOk, Loc.t("phone", "perm_notif"))
+    }
+
+    /** Deep-link to MIUI's battery saver screen for this app. */
+    private fun openBatterySettings() {
+        try {
+            startActivity(Intent("miui.intent.action.OP_APP_DETAIL").apply {
+                putExtra("miui.intent.extra.APP_PKG", packageName)
+            })
+        } catch (e: Exception) {
+            try {
+                startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            } catch (e2: Exception) {
+                Toast.makeText(this, "Apps → Lynko → Battery saver → No restrictions", Toast.LENGTH_LONG).show()
+            }
+        }
     }
 
     private val drawableOk: android.graphics.drawable.Drawable? by lazy {

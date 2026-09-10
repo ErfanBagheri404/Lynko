@@ -522,6 +522,21 @@ fn inject_swipe(state: State<'_, LynkoState>, x1: f32, y1: f32, x2: f32, y2: f32
 }
 
 #[tauri::command]
+fn inject_drag_start(state: State<'_, LynkoState>, x: f32, y: f32) -> Result<(), String> {
+    send_cmd(&state, &Command::DragStart { x, y })
+}
+
+#[tauri::command]
+fn inject_drag_move(state: State<'_, LynkoState>, x: f32, y: f32) -> Result<(), String> {
+    send_cmd(&state, &Command::DragMove { x, y })
+}
+
+#[tauri::command]
+fn inject_drag_end(state: State<'_, LynkoState>, x: f32, y: f32) -> Result<(), String> {
+    send_cmd(&state, &Command::DragEnd { x, y })
+}
+
+#[tauri::command]
 fn inject_key(state: State<'_, LynkoState>, key: String) -> Result<(), String> {
     send_cmd(&state, &Command::Key { key })
 }
@@ -739,6 +754,9 @@ fn main() {
             audio_stop,
             inject_tap,
             inject_swipe,
+            inject_drag_start,
+            inject_drag_move,
+            inject_drag_end,
             inject_key,
             inject_text,
             send_signal,

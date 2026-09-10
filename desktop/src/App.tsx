@@ -479,6 +479,32 @@ function ScreenView(props: ShellProps) {
   const [fullscreen, setFullscreen] = useState(false);
   const canvasRef = useRef<HTMLDivElement>(null);
   const dragStart = useRef<{ x: number; y: number } | null>(null);
+  const dragging = useRef(false);
+  const lastMove = useRef({ x: 0, y: 0 });
+
+  const sendMove = async (p: { x: number; y: number }) => {
+    try { await api.invoke("inject_drag_move", { x: p.x, y: p.y }); } catch {}
+  };
+
+  const onDown = async (ev: React.PointerEvent) => {
+    const p = norm(ev);
+    dragStart.current = p;
+    dragging.current = true;
+    lastMove.current = p;
+    try { ev.currentTarget.setPointerCapture(ev.pointerId); } catch {}
+    // Start the phone-side stroke immediately: finger goes down while the
+    // desktop pointer is still moving, so the drag follows LIVE.
+    try { await api.invoke("inject_drag_start", { x: p.x, y: p.y }); } catch {}
+  };
+
+  const onMove = (ev: React.PointerEvent) => {
+    if (!dragging.current || !streaming) return;
+    const p = norm(ev);
+    const dx = Math.abs(p.x - lastMove.current.x), dy = Math.abs(p.y - lastMove.current.y);
+    if (dx < 0.008 && dy < 0.008) return; // throttle: segments only on real motion
+    lastMove.current = p;
+    void sendMove(p);
+  };
 
   // subscribe to JPEG frames from the Rust link layer.
   // Direct <img>.src writes — NOT React state: setState at 15fps re-renders
@@ -536,16 +562,14 @@ function ScreenView(props: ShellProps) {
 
   const onTap = async (ev: React.PointerEvent) => {
     if (!streaming) return;
-    // only fire tap if this wasn't the end of a swipe
-    if (dragStart.current) {
-      const s = dragStart.current;
-      dragStart.current = null;
+    // If a live drag is in flight, finish it (lift the phone finger) instead
+    // of treating the release as a tap.
+    if (dragging.current) {
+      dragging.current = false;
       const p = norm(ev);
-      const dx = Math.abs(p.x - s.x), dy = Math.abs(p.y - s.y);
-      if (dx > 0.02 || dy > 0.02) {
-        try { await api.invoke("inject_swipe", { x1: s.x, y1: s.y, x2: p.x, y2: p.y }); } catch {}
-        return;
-      }
+      try { await api.invoke("inject_drag_end", { x: p.x, y: p.y }); } catch {}
+      dragStart.current = null;
+      return;
     }
     const p = norm(ev);
     const id = Date.now() + Math.random();
@@ -591,11 +615,16 @@ function ScreenView(props: ShellProps) {
           className={`screen-canvas interactive${rotated ? " rotated" : ""}`}
           ref={canvasRef}
           tabIndex={link.connected && streaming ? 0 : -1}
-          onPointerDown={(e) => {
-            dragStart.current = norm(e);
-            try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
-          }}
+          onPointerDown={onDown}
+          onPointerMove={onMove}
           onPointerUp={onTap}
+          onPointerCancel={() => {
+            if (dragging.current) {
+              dragging.current = false;
+              dragStart.current = null;
+              void api.invoke("inject_drag_end", { x: lastMove.current.x, y: lastMove.current.y }).catch(() => {});
+            }
+          }}
           onKeyDown={(e) => { e.currentTarget.focus(); onKey(e); }}
           title={streaming ? T("click_tap_hint") : undefined}
         >

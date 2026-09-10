@@ -152,6 +152,35 @@
         </LinearLayout>
 
         <LinearLayout
+            android:id="@+id/permBattery"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:padding="8dp">
+
+            <TextView
+                android:id="@+id/permBatteryIcon"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:gravity="center"
+                android:text="•"
+                android:textColor="#FFB454"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/permBatteryText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:text="Battery: No restrictions — so MIUI keeps the service alive"
+                android:textColor="#9BA0A6"
+                android:fontFamily="@font/lynko_ui"
+                android:textSize="14sp" />
+        </LinearLayout>
+
+        <LinearLayout
             android:id="@+id/permNotif"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

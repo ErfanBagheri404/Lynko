@@ -11,6 +11,8 @@
     "requires": "Requires",
     "perm_screen": "Screen capture consent — for mirroring",
     "perm_a11y": "Accessibility service — for remote taps and swipes",
+    "perm_a11y_needed": "Enable the Lynko accessibility service first — it's required for remote control",
+    "perm_battery": "Battery: No restrictions — so MIUI keeps the service alive",
     "perm_notif": "Notification access — to forward notifications",
     "start": "Start Lynko",
     "stop": "Stop Lynko",
