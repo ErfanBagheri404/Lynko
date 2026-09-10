@@ -24,13 +24,20 @@ class ScreenSession(
     private val onFrame: (ByteArray) -> Unit,
 ) {
     private val metrics = context.resources.displayMetrics
-    // Native phone resolution at ~15 fps / JPEG 70. The WS send queue is
-    // bounded (MAX_PENDING_BYTES): unsent frames are dropped, not queued —
-    // backpressure protection against buffer-overflow disconnects.
+    // Native phone resolution at ~15 fps / adaptive JPEG (75 start, 35 floor).
+    // The WS send queue is bounded (sendBusy gate in LinkService): saturated
+    // frames are dropped and quality steps down until the link drains.
     private val width = metrics.widthPixels
     private val height = metrics.heightPixels
     private val density = metrics.densityDpi / 2
     private var lastFrameAt = 0L
+    private var jpegQuality = 75
+    private var drops = 0
+
+    /** Backpressure feedback from LinkService: when frames are being dropped
+     * on the send side, step JPEG quality down (floor 35) until the link
+     * drains; recover slowly (+5) when two consecutive frames go through. */
+    fun noteDrop() { drops++; if (drops % 3 == 0 && jpegQuality > 35) jpegQuality -= 10 }
 
     private var virtualDisplay: android.hardware.display.VirtualDisplay? = null
     private var reader: ImageReader? = null
@@ -80,7 +87,7 @@ class ScreenSession(
                     b
                 }
                 val baos = ByteArrayOutputStream()
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 70, baos)
+                bitmap.compress(Bitmap.CompressFormat.JPEG, jpegQuality, baos)
                 bitmap.recycle()
                 if (running) onFrame(baos.toByteArray())
             } catch (e: Exception) {

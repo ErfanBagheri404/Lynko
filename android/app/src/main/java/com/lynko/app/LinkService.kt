@@ -1,12 +1,17 @@
 package com.lynko.app
 
+import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.IBinder
+import android.os.SystemClock
 import android.util.Log
 import fi.iki.elonen.NanoHTTPD
 import org.java_websocket.WebSocket
@@ -59,12 +64,14 @@ class LinkService : Service() {
         val server = linkServer ?: return
         val conns = server.connections.toList()
         if (conns.isEmpty()) return
-        // If the previous send hasn't completed yet, skip this frame —
-        // unbounded queues in Java-WebSocket grow without limit and the
-        // connection drops.  A skipped frame is invisible; the next one
-        // carries the latest screen state.
+        // Gate: if the previous frame is still being sent (TCP buffer full
+        // or Java-WebSocket write-queue not drained yet), drop this frame
+        // entirely — the next one carries the latest screen state, and
+        // letting the queue grow causes ANR → service crash under MIUI.
+        // Gate is released BEFORE the send lock so we never hold both.
         if (!sendBusy.compareAndSet(false, true)) {
             droppedFrames++
+            screenSession.get()?.noteDrop()
             if (droppedFrames % 30 == 1) Log.w(TAG, "link saturated — dropped $droppedFrames frames total")
             return
         }
@@ -80,9 +87,34 @@ class LinkService : Service() {
         }
     }
 
+    private fun bindToWifi() {
+        // A VPN (tun0) hijacks the default route: replies to desktop pair/link
+        // requests would leave through the tunnel and never return — the
+        // mirror drops the moment a VPN comes up. Binding the process to the
+        // Wi-Fi transport keeps every Lynko socket on wlan0 while the VPN
+        // keeps covering the rest of the system. This is the same mechanism
+        // chat apps use to stay reachable behind VPNs.
+        try {
+            val cm = getSystemService(ConnectivityManager::class.java)
+            val wifi = cm.allNetworks.firstOrNull { net ->
+                cm.getNetworkCapabilities(net)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+            }
+            if (wifi != null) {
+                cm.bindProcessToNetwork(wifi)
+                Log.i(TAG, "process bound to Wi-Fi network (VPN-transparent)")
+            } else {
+                Log.w(TAG, "no Wi-Fi network to bind — link may break while VPN is up")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "bindProcessToNetwork failed: ${e.message}")
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
+        if (running) { Log.w(TAG, "link service onCreate while already running — skipping re-init"); return }
         startForeground()
+        bindToWifi()
         running = true
         pairingServer = PairingServer(PAIR_PORT)
         pairingServer.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
@@ -139,7 +171,13 @@ class LinkService : Service() {
         val nm = getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= 26) {
             nm.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "Lynko link", NotificationManager.IMPORTANCE_LOW)
+                NotificationChannel(CHANNEL_ID, "Lynko link", NotificationManager.IMPORTANCE_LOW).apply {
+                    // VISIBILITY_PUBLIC keeps the notification visible on the lock screen.
+                    // MIUI's LockScreenClean kills processes whose FGS notification is
+                    // hidden (VISIBILITY_SECRET/-1000) — adj 900 = cached background.
+                    lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+                    setShowBadge(false)
+                }
             )
         }
         val notif: Notification =
@@ -295,18 +333,28 @@ class LinkService : Service() {
             "tap" -> {
                 val x = (d as? JSONObject)?.optDouble("x") ?: 0.5
                 val y = (d as? JSONObject)?.optDouble("y") ?: 0.5
-                InputInjector.tap(applicationContext, x.toFloat(), y.toFloat())
-                sendEvent(conn, "log", JSONObject().put("msg", "tap received"))
+                if (InputInjector.tap(applicationContext, x.toFloat(), y.toFloat())) {
+                    sendEvent(conn, "log", JSONObject().put("msg", "tap received"))
+                } else {
+                    sendEvent(conn, "input_error", JSONObject()
+                        .put("kind", "accessibility")
+                        .put("hint", "enable Lynko in Settings > Accessibility"))
+                }
             }
             "swipe" -> {
                 val o = d as? JSONObject
                 if (o != null) {
-                    InputInjector.swipe(
+                    if (InputInjector.swipe(
                         applicationContext,
                         o.optDouble("x1", 0.0).toFloat(), o.optDouble("y1", 0.0).toFloat(),
                         o.optDouble("x2", 1.0).toFloat(), o.optDouble("y2", 1.0).toFloat()
-                    )
-                    sendEvent(conn, "log", JSONObject().put("msg", "swipe received"))
+                    )) {
+                        sendEvent(conn, "log", JSONObject().put("msg", "swipe received"))
+                    } else {
+                        sendEvent(conn, "input_error", JSONObject()
+                            .put("kind", "accessibility")
+                            .put("hint", "enable Lynko in Settings > Accessibility"))
+                    }
                 }
             }
             "key" -> {
@@ -469,7 +517,32 @@ class LinkService : Service() {
         sendEvent(conn, "log", JSONObject().put("msg", "audio streaming"))
     }
 
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // START_STICKY: if the system kills us (memory / MIUI task-swipe),
+        // recreate the service so the desktop link + mDNS survive.
+        startForeground()
+        return START_STICKY
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // MIUI kills on task-swipe: schedule a 1s auto-restart (allowed via
+        // AlarmManager exact trigger even when background-start is blocked).
+        super.onTaskRemoved(rootIntent)
+        try {
+            val pi = PendingIntent.getService(
+                this, 1, Intent(this, LinkService::class.java),
+                PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val am = getSystemService(AlarmManager::class.java)
+            am.set(AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                SystemClock.elapsedRealtime() + 1000, pi)
+        } catch (e: Exception) {
+            Log.w(TAG, "auto-restart not possible: ${e.message}")
+        }
+    }
+
     override fun onDestroy() {
+        Log.w(TAG, "link service destroyed — pair/link/transfer ports closed")
         running = false
         pairingServer.stop()
         transferServer?.stop()

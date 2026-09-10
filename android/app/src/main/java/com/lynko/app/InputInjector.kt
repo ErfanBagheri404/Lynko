@@ -46,10 +46,10 @@ class LynkoAccessibilityService : AccessibilityService() {
 
 object InputInjector {
 
-    fun tap(ctx: Context, x01: Float, y01: Float) {
+    fun tap(ctx: Context, x01: Float, y01: Float): Boolean {
         val svc = LynkoAccessibilityService.instance ?: run {
             Log.w("lynko", "tap ignored — accessibility service not enabled")
-            return
+            return false
         }
         val metrics = ctx.resources.displayMetrics
         val x = x01 * metrics.widthPixels
@@ -58,12 +58,13 @@ object InputInjector {
         val stroke = GestureDescription.StrokeDescription(path, 0, 80)
         svc.dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), null, null)
         Log.i("lynko", "tap ($x01,$y01)")
+        return true
     }
 
-    fun swipe(ctx: Context, x1: Float, y1: Float, x2: Float, y2: Float) {
+    fun swipe(ctx: Context, x1: Float, y1: Float, x2: Float, y2: Float): Boolean {
         val svc = LynkoAccessibilityService.instance ?: run {
             Log.w("lynko", "swipe ignored — accessibility service not enabled")
-            return
+            return false
         }
         val metrics = ctx.resources.displayMetrics
         val path = Path().apply {
@@ -77,6 +78,7 @@ object InputInjector {
         }
         svc.dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), null, null)
         Log.i("lynko", "swipe")
+        return true
     }
 
     /** Navigation keys that need a global action, not a gesture. */

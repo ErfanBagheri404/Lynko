@@ -167,6 +167,10 @@ export default function App() {
       } else if (ev.t === "clipboard_reply") {
         setClipItems((c) => [{ id: ++toastUid, text: ev.d.text as string, source: "phone" as const, at: Date.now() }, ...c].slice(0, 30));
         toast("Clipboard pulled from phone", "ok");
+      } else if (ev.t === "input_error") {
+        const kind = ev.d.kind as string;
+        if (kind === "accessibility") toast("Taps & swipes need Accessibility: open Settings → Accessibility → Lynko → enable", "err");
+        else if (kind === "ime") toast("Typing needs the Lynko keyboard: set it as your active IME first", "err");
       } else if (ev.t === "notification") {
         setNotes((n) => [{ id: ++toastUid, app: ev.d.app as string, title: ev.d.title as string, body: ev.d.body as string, at: Date.now() }, ...n].slice(0, 50));
       }
@@ -465,7 +469,10 @@ function ScreenView(props: ShellProps) {
   const [streaming, setStreaming] = useState(false);
   const [frame, setFrame] = useState<string | null>(null);
   const [frameCount, setFrameCount] = useState(0);
-  const [lastTap, setLastTap] = useState<{ x: number; y: number } | null>(null);
+  // Fire-once ripples: each tap pushes {x,y,id}; a timer removes it after the
+  // CSS animation (0.45s). Never keyed by frameCount — that remounted the span
+  // on every frame and restarted the animation forever ("ripple spam").
+  const [ripples, setRipples] = useState<{ x: number; y: number; id: number }[]>([]);
   const [textBuf, setTextBuf] = useState("");
   const [rotated, setRotated] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
@@ -521,7 +528,9 @@ function ScreenView(props: ShellProps) {
       }
     }
     const p = norm(ev);
-    setLastTap(p);
+    const id = Date.now() + Math.random();
+    setRipples((rs) => [...rs, { x: p.x, y: p.y, id }]);
+    setTimeout(() => setRipples((rs) => rs.filter((r) => r.id !== id)), 500);
     try { await api.invoke("inject_tap", { x: p.x, y: p.y }); } catch {}
   };
 
@@ -586,9 +595,9 @@ function ScreenView(props: ShellProps) {
           ) : (
             <div className="no-signal"><strong>No phone connected</strong>Go to Devices, connect.</div>
           )}
-          {lastTap && frame && (
-            <span className="tap-ripple" style={{ left: `${lastTap.x * 100}%`, top: `${lastTap.y * 100}%` }} key={`${lastTap.x}-${lastTap.y}-${frameCount}`} />
-          )}
+          {ripples.map((r) => (
+            <span key={r.id} className="tap-ripple" style={{ left: `${r.x * 100}%`, top: `${r.y * 100}%` }} />
+          ))}
         </div>
         <div className="screen-bar">
           <span>{streaming && frameCount > 0 ? `${frameCount} frames · tap/drag/type` : link.connected ? "ready" : "idle"}</span>
