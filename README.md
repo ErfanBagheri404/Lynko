@@ -4,11 +4,11 @@
 
 **Your phone, on your desktop.**
 
-Open-source Samsung Flow / AirDroid alternative — mirror and control **any Android phone** from your Windows or Linux PC over Wi-Fi.
+Open-source Samsung Flow / AirDroid alternative — mirror and control **any Android phone** from your Windows, Linux, or macOS computer over Wi-Fi.
 
 **No USB cable · No USB debugging · No root · No cloud · No accounts**
 
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20Android-2A2E33?logo=linux&logoColor=FCC624&labelColor=16181A)](https://github.com/ErfanBagheri404/Lynko/releases)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS%20%7C%20Android-2A2E33?logo=apple&logoColor=999999&labelColor=16181A)](https://github.com/ErfanBagheri404/Lynko/releases)
 [![Release](https://img.shields.io/github/v/release/ErfanBagheri404/Lynko?include_prereleases&logo=github&labelColor=16181A)](https://github.com/ErfanBagheri404/Lynko/releases)
 [![CI](https://img.shields.io/badge/CI-offline-6B7280?labelColor=16181A)](#)
 [![License](https://img.shields.io/badge/license-Apache--2.0-FFB454?labelColor=16181A)](LICENSE)
@@ -45,6 +45,7 @@ Grab the latest build from [**Releases**](https://github.com/ErfanBagheri404/Lyn
 |---|---|
 | 🪟 **Windows** | `Lynko_x64-setup.exe` (installer) · `.msi` · portable `.zip` |
 | 🐧 **Linux** | `.deb` · `.rpm` · `.AppImage` (portable) |
+| 🍎 **macOS** | Universal `.dmg` (Apple Silicon + Intel) |
 | 🤖 **Android** | `lynko-<flavor>-<abi>.apk` — pick **`universal`** if unsure |
 
 ### Android flavors
@@ -108,7 +109,7 @@ cd core && cargo test
 - [ ] Phone → PC file transfer
 - [ ] TLS on the link socket + rotating PIN
 - [ ] Phone-side send history & device avatars (LocalSend-inspired)
-- [ ] macOS desktop builds
+- [ ] Signed + notarized macOS DMG (build ships unsigned — right-click → Open on first launch)
 - [ ] Remote notifications quick-reply
 
 ## ❓ FAQ

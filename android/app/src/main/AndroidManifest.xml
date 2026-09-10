@@ -26,6 +26,15 @@
             </intent-filter>
         </activity>
 
+        <!-- Transfer consent (LocalSend-style prepare-upload gate). Launched
+             from LinkService, so it needs the NEW_TASK task affinity. -->
+        <activity
+            android:name=".TransferConsentActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Lynko" />
+
         <!-- Input injection without root: AccessibilityService with gesture dispatch -->
         <service
             android:name=".LynkoAccessibilityService"

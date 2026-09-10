@@ -151,20 +151,24 @@ class TransferServer(
         val file = st.files[fileId] ?: return badRequest("unknown file")
         if (st.closed) return badRequest("session closed")
 
-        // Stream to a temp file, then move into Downloads and verify sha256.
+        // Stream the request body: read exactly Content-Length bytes.
+        // (Relying on read()-to-EOF deadlocks: NanoHTTPD keep-alive sockets
+        // never EOF before the next request arrives.)
+        val cl = session.headers["content-length"]?.toLongOrNull() ?: -1L
         val tmp = java.io.File(appContext.cacheDir, "lynko-tx-$fileId.tmp")
         var written = 0L
         val digest = java.security.MessageDigest.getInstance("SHA-256")
         session.inputStream.use { input ->
             java.io.FileOutputStream(tmp).use { out ->
                 val buf = ByteArray(64 * 1024)
-                while (true) {
-                    val n = input.read(buf)
+                while (cl < 0 || written < cl) {
+                    val want = if (cl < 0) buf.size else minOf(buf.size.toLong(), cl - written).toInt()
+                    val n = input.read(buf, 0, want)
                     if (n < 0) break
                     out.write(buf, 0, n)
                     digest.update(buf, 0, n)
                     written += n
-                    onProgress(fileId, written, file.size)
+                    onProgress(fileId, written, if (file.size > 0) file.size else cl)
                 }
             }
         }

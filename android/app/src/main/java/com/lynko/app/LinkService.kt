@@ -69,7 +69,27 @@ class LinkService : Service() {
             port = 7914,
             deviceName = android.os.Build.MODEL ?: "Android",
             onConsentRequest = { session, answer ->
-                TransferConsent.show(this, session, answer)
+                // Launch a real Activity — a dialog from a Service context
+                // would throw (no window token). Result releases the latch.
+                val latch = java.util.concurrent.CountDownLatch(1)
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    val i = android.content.Intent(this, TransferConsentActivity::class.java)
+                        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        .putExtra(TransferConsentActivity.EXTRA_ALIAS, session.senderAlias)
+                        .putExtra(TransferConsentActivity.EXTRA_COUNT, session.files.size)
+                        .putExtra(TransferConsentActivity.EXTRA_SIZE, run {
+                            val kb = session.files.sumOf { it.size } / 1024
+                            if (kb > 1024) "${kb / 1024} MB" else "$kb KB"
+                        })
+                        .putExtra("sessionId", session.id)
+                    startActivity(i)
+                    TransferConsentHub.pending[session.id] = { ok ->
+                        answer(ok)
+                        latch.countDown()
+                    }
+                }
+                latch.await(90, java.util.concurrent.TimeUnit.SECONDS)
+                TransferConsentHub.pending.remove(session.id)
             },
             onProgress = { fileId, written, total ->
                 Log.d("lynko", "tx $fileId: $written/$total")

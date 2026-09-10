@@ -9,6 +9,57 @@ use lynko_core::{
 /// HTTP port of the phone's LocalSend-style transfer server.
 const TRANSFER_PORT: u16 = 7914;
 use sha2::Digest;
+
+/// Disk-file body stream with an exact size_hint. reqwest sends
+/// Content-Length (not chunked TE) when size_hint is exact — the phone's
+/// upload reader consumes exactly Content-Length bytes. Emits cumulative
+/// `file_progress` per chunk. Fully Unpin: poll_next does blocking reads,
+/// which is fine for local disk at 256 KB chunks.
+struct FileReadStream {
+    file: Option<std::fs::File>,
+    done: u64,
+    total: u64,
+    id: String,
+    name: String,
+    app: tauri::AppHandle,
+}
+
+impl futures_util::Stream for FileReadStream {
+    type Item = Result<bytes::Bytes, std::io::Error>;
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        use std::io::Read;
+        let this = &mut *self;
+        let Some(f) = this.file.as_mut() else {
+            return std::task::Poll::Ready(None);
+        };
+        let mut buf = vec![0u8; 256 * 1024];
+        match f.read(&mut buf) {
+            Ok(0) => {
+                this.file = None;
+                std::task::Poll::Ready(None)
+            }
+            Ok(n) => {
+                buf.truncate(n);
+                this.done += n as u64;
+                let _ = this.app.emit("file_progress", serde_json::json!({
+                    "id": this.id, "name": this.name,
+                    "written": this.done, "total": this.total,
+                }));
+                std::task::Poll::Ready(Some(Ok(buf.into())))
+            }
+            Err(e) => {
+                this.file = None;
+                std::task::Poll::Ready(Some(Err(e)))
+            }
+        }
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.total as usize, Some(self.total as usize))
+    }
+}
 use mdns_sd::{ServiceDaemon, ServiceEvent};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -506,17 +557,29 @@ fn send_files_v2(state: State<'_, LynkoState>, paths: Vec<String>) -> Result<Str
         };
         let _ = prep;
 
-        // 2) upload each file's raw bytes
+        // 2) upload each file's raw bytes, streaming for incremental progress
         for (id, name, size, p) in &metas {
-            let data = match std::fs::read(p) {
-                Ok(d) => d,
+            let id = id.clone();
+            let name = name.clone();
+            let size = *size;
+            let p = p.clone();
+            let file = match std::fs::File::open(&p) {
+                Ok(f) => f,
                 Err(e) => {
                     let _ = app.emit("file_done", serde_json::json!({ "id": id, "ok": false, "error": format!("read: {e}") }));
                     continue;
                 }
             };
+            let stream = FileReadStream {
+                file: Some(file),
+                done: 0,
+                total: size,
+                id: id.clone(),
+                name: name.clone(),
+                app: app.clone(),
+            };
             let url = format!("{base}/api/lynko/v2/upload?sessionId={session_id}&fileId={id}");
-            match client.post(url).body(data).send().await {
+            match client.post(url).body(reqwest::Body::wrap_stream(stream)).send().await {
                 Ok(r) if r.status().as_u16() == 200 => {
                     let _ = app.emit("file_progress", serde_json::json!({ "id": id, "name": name, "written": size, "total": size }));
                     let _ = app.emit("file_done", serde_json::json!({ "id": id, "ok": true }));
@@ -554,7 +617,20 @@ fn list_devices(state: State<'_, LynkoState>) -> Vec<Device> {
 
 #[tauri::command]
 fn desktop_name() -> String {
-    std::env::var("COMPUTERNAME").unwrap_or_else(|_| "Lynko Desktop".into())
+    std::env::var("COMPUTERNAME")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .or_else(|| std::env::var("HOSTNAME").ok().filter(|s| !s.is_empty()))
+        .or_else(|| {
+            // macOS / Linux: hostname(1)
+            std::process::Command::new("hostname")
+                .output()
+                .ok()
+                .filter(|o| o.status.success())
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                .filter(|s| !s.is_empty())
+        })
+        .unwrap_or_else(|| "Lynko Desktop".into())
 }
 
 #[tauri::command]

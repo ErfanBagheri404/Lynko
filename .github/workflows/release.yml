@@ -254,13 +254,76 @@ jobs:
           if-no-files-found: error
 
   # ────────────────────────────────────────────────────────────────────
+  # macOS — DMG (universal: aarch64 + x86_64)
+  # Note: unsigned. Users right-click → Open on first launch.
+  # ────────────────────────────────────────────────────────────────────
+  macos:
+    name: macOS — dmg (universal)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "desktop/src-tauri -> target"
+
+      - run: npm ci
+        working-directory: desktop
+
+      - name: Compute version
+        id: ver
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"; VERSION="${VERSION%%-*}"
+          else
+            VERSION="0.1.${GITHUB_RUN_NUMBER}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Stamp version
+        run: |
+          V="${{ steps.ver.outputs.version }}"
+          node -e "
+            const fs=require('fs');
+            const p='desktop/src-tauri/tauri.conf.json';
+            const j=JSON.parse(fs.readFileSync(p,'utf8'));
+            j.version=process.argv[1];
+            fs.writeFileSync(p,JSON.stringify(j,null,2));
+          " "$V"
+          sed -i '' "s/^version = \".*\"/version = \"$V\"/" desktop/src-tauri/Cargo.toml
+
+      - name: Build universal DMG
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MACOSX_DEPLOYMENT_TARGET: "10.15"
+        with:
+          projectPath: desktop
+          tauriScript: npx tauri
+          args: --target universal-apple-darwin --bundles dmg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+
+  # ────────────────────────────────────────────────────────────────────
   # Publish — collect everything into one GitHub Release
   # main → rolling "continuous" prerelease (replaced each push)
   # tag  → stable release "Lynko vX.Y.Z"
   # ────────────────────────────────────────────────────────────────────
   publish:
     name: Publish release
-    needs: [android, windows, linux]
+    needs: [android, windows, linux, macos]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -273,7 +336,8 @@ jobs:
         run: |
           mkdir -p flat
           find release-assets -type f \( -name "*.apk" -o -name "*.exe" -o -name "*.msi" \
-              -o -name "*.zip" -o -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" \) \
+              -o -name "*.zip" -o -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" \
+              -o -name "*.dmg" \) \
             -exec cp {} flat/ \;
           ls -la flat
 
