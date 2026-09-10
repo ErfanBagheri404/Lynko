@@ -62,7 +62,7 @@ impl futures_util::Stream for FileReadStream {
 }
 use mdns_sd::{ServiceDaemon, ServiceEvent};
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -97,6 +97,11 @@ struct LynkoState {
     /// active control link
     link: Mutex<Option<LinkHandle>>,
     app: Mutex<Option<AppHandle>>,
+    /// Monotonic link generation counter. Each `connect_inner` bumps it;
+    /// every spawned reconnect loop captures the value at spawn time and
+    /// stops as soon as it no longer matches — exactly one reconnect chain
+    /// per device can ever be alive, no matter how many drops stack up.
+    link_gen: AtomicU64,
 }
 
 impl LynkoState {
@@ -300,10 +305,10 @@ fn connect_inner(state: &LynkoState, device_id: &str) -> Result<(), String> {
 
     { let mut link = state.link.lock().unwrap(); *link = Some(LinkHandle { device_id: device.id.clone(), device_name: device.name.clone(), device_address: device.address.clone(), tx: tx.clone(), alive: alive.clone() }); }
 
-    let _ = app.emit("link_state", serde_json::json!({ "connected": true, "device_id": &device.id }));
+    let gen = state.link_gen.fetch_add(1, Ordering::SeqCst) + 1;
     let _ = app.emit("log", serde_json::json!({ "msg": format!("link connecting to {} ({})", device.name, device.address) }));
 
-    tauri::async_runtime::spawn(run_link(app.clone(), device, tx, rx, alive.clone()));
+    tauri::async_runtime::spawn(run_link(app.clone(), device, tx, rx, alive.clone(), gen));
     Ok(())
 }
 
@@ -313,6 +318,7 @@ async fn run_link(
     _tx: tokio_mpsc::Sender<Message>,
     mut rx: tokio_mpsc::Receiver<Message>,
     alive: Arc<AtomicBool>,
+    gen: u64,
 ) {
     use tauri::{Emitter, Manager};
 
@@ -326,11 +332,12 @@ async fn run_link(
             // Dial failed (e.g. VPN just came up) — retry with backoff instead
             // of silently giving up. The phone's VpnGuard recreates its
             // listeners within ~1s of a network change.
-            spawn_reconnect(app.clone(), device.id.clone());
+            spawn_reconnect(app.clone(), device.id.clone(), gen);
             return;
         }
     };
 
+    let _ = app.emit("link_state", serde_json::json!({ "connected": true, "device_id": &device.id }));
     let _ = app.emit("log", serde_json::json!({ "msg": format!("link UP to {}", device.name) }));
 
     let (mut ws_sink, mut ws_src) = ws_stream.split();
@@ -408,7 +415,7 @@ async fn run_link(
         let link = state.link.lock().unwrap();
         if let Some(l) = link.as_ref() {
             if l.device_id == device.id {
-                spawn_reconnect(app.clone(), device.id.clone());
+                spawn_reconnect(app.clone(), device.id.clone(), gen);
             }
         }
     }
@@ -416,23 +423,25 @@ async fn run_link(
 
 /// Backoff-reconnect loop for a dropped link. Stops when a fresh link takes
 /// over (connect_inner replaces the handle) or the device is forgotten.
-fn spawn_reconnect(app: AppHandle, device_id: String) {
+fn spawn_reconnect(app: AppHandle, device_id: String, gen: u64) {
     tauri::async_runtime::spawn(async move {
         let mut delay = Duration::from_secs(1);
         loop {
             tokio::time::sleep(delay).await;
-            let stale = {
+            // Stop if a new connection replaced us or the device was forgotten.
+            {
                 let state = app.state::<LynkoState>();
+                if state.link_gen.load(Ordering::SeqCst) != gen { return; }
                 let link = state.link.lock().unwrap();
                 match link.as_ref() {
-                    None => false,           // device forgotten / user disconnected
-                    Some(l) => l.device_id == device_id && !l.alive.load(Ordering::SeqCst),
+                    None => return,            // forgotten
+                    Some(l) if l.device_id == device_id && !l.alive.load(Ordering::SeqCst) => {}
+                    Some(_) => return,         // different device took over
                 }
-            };
-            if !stale { return; } // fresh link or user action — stop
+            }
             let state = app.state::<LynkoState>();
             match connect_inner(&state, &device_id) {
-                Ok(()) => return, // spawned a new run_link — done
+                Ok(()) => return,
                 Err(_) => { delay = std::cmp::min(delay * 2, Duration::from_secs(15)); }
             }
         }
@@ -708,6 +717,7 @@ fn main() {
                 paired: Mutex::new(paired),
                 link: Mutex::new(None),
                 app: Mutex::new(Some(handle.clone())),
+                link_gen: AtomicU64::new(0),
             });
             start_discovery(handle);
             Ok(())

@@ -49,6 +49,7 @@ class MainActivity : AppCompatActivity() {
         statusSub = findViewById(R.id.statusSub)
         startBtn = findViewById(R.id.startBtn)
         pinText = findViewById(R.id.pinText)
+        DevPermHeal.heal(this)
 
         permScreen = findViewById(R.id.permScreen)
         permScreenIcon = findViewById(R.id.permScreenIcon)
