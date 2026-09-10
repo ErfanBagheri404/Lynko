@@ -24,10 +24,11 @@ class ScreenSession(
     private val onFrame: (ByteArray) -> Unit,
 ) {
     private val metrics = context.resources.displayMetrics
-    // Half resolution: full 1344x2992 JPEGs flood the WS send queue over
-    // slow links and Java-WebSocket drops the connection (buffer overflow).
-    private val width = metrics.widthPixels / 2
-    private val height = metrics.heightPixels / 2
+    // Native phone resolution at ~15 fps / JPEG 70. The WS send queue is
+    // bounded (MAX_PENDING_BYTES): unsent frames are dropped, not queued —
+    // backpressure protection against buffer-overflow disconnects.
+    private val width = metrics.widthPixels
+    private val height = metrics.heightPixels
     private val density = metrics.densityDpi / 2
     private var lastFrameAt = 0L
 
@@ -48,17 +49,38 @@ class ScreenSession(
         r.setOnImageAvailableListener({ rr ->
             val img = rr.acquireLatestImage() ?: return@setOnImageAvailableListener
             try {
-                // ~3 fps cap: drop whatever arrives faster than 300ms apart
+                // ~15 fps cap: drop whatever arrives faster than 66ms apart
                 val now = System.currentTimeMillis()
-                if (now - lastFrameAt < 300) return@setOnImageAvailableListener
+                if (now - lastFrameAt < 66) return@setOnImageAvailableListener
                 lastFrameAt = now
                 val plane = img.planes[0]
                 val buffer = plane.buffer
                 buffer.rewind()
-                val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                bitmap.copyPixelsFromBuffer(buffer)
+                val stride = plane.rowStride
+                val bitmap = if (stride == width * 4) {
+                    // tightly packed rows: single bulk copy
+                    val b = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                    b.copyPixelsFromBuffer(buffer)
+                    b
+                } else {
+                    // stride padding: copy row by row into a packed bitmap.
+                    // ImageReader may round rows up to a 64-byte boundary;
+                    // copyPixelsFromBuffer would skew the image into bands.
+                    val b = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                    val packed = java.nio.ByteBuffer.allocate(width * height * 4)
+                    val rowBytes = width * 4
+                    val row = ByteArray(rowBytes)
+                    for (y in 0 until height) {
+                        buffer.position(y * stride)
+                        buffer.get(row, 0, rowBytes)
+                        packed.put(row)
+                    }
+                    packed.rewind()
+                    b.copyPixelsFromBuffer(packed)
+                    b
+                }
                 val baos = ByteArrayOutputStream()
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 50, baos)
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 70, baos)
                 bitmap.recycle()
                 if (running) onFrame(baos.toByteArray())
             } catch (e: Exception) {

@@ -287,7 +287,12 @@ fn connect_inner(state: &LynkoState, device_id: &str) -> Result<(), String> {
         let merged = state.merged();
         merged.into_iter().find(|d| d.id == device_id).ok_or("unknown device")?
     };
-    if !device.online { return Err(format!("{} is offline", device.name)); }
+    // mDNS expiry is unreliable (Android dozes multicast) — a paired device
+    // that stopped advertising may still be reachable at its cached address.
+    // Try the dial anyway; run_link reports the failure if it's really gone.
+    if !device.online && !device.paired {
+        return Err(format!("{} is offline", device.name));
+    }
 
     let app = state.app.lock().unwrap().clone().ok_or("app not ready")?;
     let (tx, rx) = tokio_mpsc::channel::<Message>(64);

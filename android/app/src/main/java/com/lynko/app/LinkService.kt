@@ -46,13 +46,37 @@ class LinkService : Service() {
      * interleaves the writes, corrupting the frame stream (client drops). */
     private val sendLock = Any()
 
+    /** Send backpressure: if the WS layer is holding more than this many
+     * unsent bytes, drop the frame instead of queueing it. Java-WebSocket
+     * queues unbounded by default; over Wi-Fi, full-res frames at 15 fps
+     * outpace the link and the socket dies (buffer overflow). A dropped
+     * screen frame is invisible — the next one carries the full picture. */
+    private val lastSendAt = java.util.concurrent.atomic.AtomicLong(0)
+    private val sendBusy = java.util.concurrent.atomic.AtomicBoolean(false)
+    private var droppedFrames = 0
+
     private fun broadcastBinary(frame: ByteArray) {
         val server = linkServer ?: return
         val conns = server.connections.toList()
-        synchronized(sendLock) {
-            for (ws in conns) {
-                if (ws.isOpen) ws.send(frame)
+        if (conns.isEmpty()) return
+        // If the previous send hasn't completed yet, skip this frame —
+        // unbounded queues in Java-WebSocket grow without limit and the
+        // connection drops.  A skipped frame is invisible; the next one
+        // carries the latest screen state.
+        if (!sendBusy.compareAndSet(false, true)) {
+            droppedFrames++
+            if (droppedFrames % 30 == 1) Log.w(TAG, "link saturated — dropped $droppedFrames frames total")
+            return
+        }
+        try {
+            synchronized(sendLock) {
+                for (ws in conns) {
+                    if (ws.isOpen) ws.send(frame)
+                }
             }
+            lastSendAt.set(System.currentTimeMillis())
+        } finally {
+            sendBusy.set(false)
         }
     }
 
