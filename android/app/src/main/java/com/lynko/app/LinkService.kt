@@ -358,6 +358,25 @@ class LinkService : Service() {
                     }
                 }
             }
+            "drag_start" -> {
+                val o = d as? JSONObject
+                if (o != null && !InputInjector.dragStart(applicationContext,
+                        o.optDouble("x", 0.5).toFloat(), o.optDouble("y", 0.5).toFloat())) {
+                    sendEvent(conn, "input_error", JSONObject()
+                        .put("kind", "accessibility")
+                        .put("hint", "enable Lynko in Settings > Accessibility"))
+                }
+            }
+            "drag_move" -> {
+                val o = d as? JSONObject
+                if (o != null) InputInjector.dragMove(applicationContext,
+                    o.optDouble("x", 0.5).toFloat(), o.optDouble("y", 0.5).toFloat())
+            }
+            "drag_end" -> {
+                val o = d as? JSONObject
+                if (o != null) InputInjector.dragEnd(applicationContext,
+                    o.optDouble("x", 0.5).toFloat(), o.optDouble("y", 0.5).toFloat())
+            }
             "key" -> {
                 val name = (d as? JSONObject)?.optString("key", "") ?: ""
                 // Nav keys: accessibility global action. Editing keys: the

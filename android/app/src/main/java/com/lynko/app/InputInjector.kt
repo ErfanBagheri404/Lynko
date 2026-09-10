@@ -80,6 +80,71 @@ object InputInjector {
         return true
     }
 
+    // ---- live drag (stroke continuation) --------------------------------
+    // One physical drag on the desktop = one continuing stroke on the phone,
+    // replayed segment by segment as the pointer moves. DragStart puts the
+    // finger down (willContinue=true), each DragMove extends the stroke from
+    // the previous point, DragEnd sends the final segment with willContinue
+    // =false so the finger lifts exactly when the desktop mouse releases.
+    // Without this the whole drag was replayed only after pointerup — swipes
+    // felt dead until you released the mouse.
+
+    private var dragStroke: GestureDescription.StrokeDescription? = null
+    private var dragLast: Pair<Float, Float>? = null
+
+    fun dragStart(ctx: Context, x01: Float, y01: Float): Boolean {
+        val svc = LynkoAccessibilityService.instance ?: return false
+        val metrics = ctx.resources.displayMetrics
+        val x = x01 * metrics.widthPixels
+        val y = y01 * metrics.heightPixels
+        val path = Path().apply { moveTo(x, y) }
+        // A zero-length stroke is illegal; nudge 1px so the down registers.
+        path.lineTo(x + 1f, y)
+        dragStroke = GestureDescription.StrokeDescription(path, 0, 40, true)
+        dragLast = Pair(x01, y01)
+        val ok = svc.dispatchGesture(GestureDescription.Builder().addStroke(dragStroke!!).build(), null, null)
+        Log.i("lynko", "dragStart ($x01,$y01) ok=$ok")
+        return ok
+    }
+
+    fun dragMove(ctx: Context, x01: Float, y01: Float): Boolean {
+        val svc = LynkoAccessibilityService.instance ?: return false
+        val prev = dragStroke ?: return false
+        val metrics = ctx.resources.displayMetrics
+        val x = x01 * metrics.widthPixels
+        val y = y01 * metrics.heightPixels
+        val (px01, py01) = dragLast ?: return false
+        val path = Path().apply {
+            moveTo(px01 * metrics.widthPixels, py01 * metrics.heightPixels)
+            lineTo(x, y)
+        }
+        val stroke = prev.continueStroke(path, 0, 16, true)
+        dragStroke = stroke
+        dragLast = Pair(x01, y01)
+        val ok = svc.dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), null, null)
+        if (!ok) { dragStroke = null }
+        return ok
+    }
+
+    fun dragEnd(ctx: Context, x01: Float, y01: Float): Boolean {
+        val svc = LynkoAccessibilityService.instance ?: return false
+        val prev = dragStroke ?: return false
+        val metrics = ctx.resources.displayMetrics
+        val x = x01 * metrics.widthPixels
+        val y = y01 * metrics.heightPixels
+        val (px01, py01) = dragLast ?: return false
+        val path = Path().apply {
+            moveTo(px01 * metrics.widthPixels, py01 * metrics.heightPixels)
+            lineTo(x, y)
+        }
+        val stroke = prev.continueStroke(path, 0, 16, false) // lifts the finger
+        dragStroke = null
+        dragLast = null
+        val ok = svc.dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), null, null)
+        Log.i("lynko", "dragEnd ($x01,$y01) ok=$ok")
+        return ok
+    }
+
     /** Navigation keys that need a global action, not a gesture. */
     fun navKey(name: String): Boolean {
         val svc = LynkoAccessibilityService.instance ?: run {

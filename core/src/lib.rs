@@ -150,6 +150,20 @@ pub enum Command {
         x2: f32,
         y2: f32,
     },
+    /// Live-drag segments (stroke continuation): first segment starts the
+    /// pointer down, `false` segments continue it, the last `true` one lifts.
+    DragStart {
+        x: f32,
+        y: f32,
+    },
+    DragMove {
+        x: f32,
+        y: f32,
+    },
+    DragEnd {
+        x: f32,
+        y: f32,
+    },
     /// Inject a key press (android keycode name or UI key, e.g. "Enter").
     Key {
         key: String,
