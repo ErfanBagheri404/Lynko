@@ -284,10 +284,13 @@ class LinkService : Service() {
         override fun onOpen(conn: WebSocket, handshake: ClientHandshake) {
             Log.i(TAG, "desktop connected: ${handshake.resourceDescriptor}")
             LinkNotifier.broadcaster.set { json -> conn.send(json) }
+            // Clipboard sync phone→desktop (2s poll fallback covers MIUI)
+            ClipSync.start(applicationContext) { json -> conn.send(json) }
         }
         override fun onClose(conn: WebSocket, code: Int, reason: String?, remote: Boolean) {
             Log.i(TAG, "desktop disconnected")
             LinkNotifier.broadcaster.set(null)
+            ClipSync.stop()
             screenSession.getAndSet(null)?.stop()
         }
         override fun onMessage(conn: WebSocket, message: String) {
@@ -428,8 +431,23 @@ class LinkService : Service() {
             }
             "paste" -> {
                 val text = (d as? JSONObject)?.optString("text") ?: ""
+                ClipSync.markLocal(text)
                 ClipboardBridge.write(applicationContext, text)
                 sendEvent(conn, "log", JSONObject().put("msg", "clipboard written"))
+            }
+            "notif_reply" -> {
+                val o = d as? JSONObject
+                val pkg = o?.optString("app") ?: ""
+                val notifId = o?.optInt("notifId", -1) ?: -1
+                val text = o?.optString("text") ?: ""
+                val err = if (pkg.isBlank() || text.isBlank() || notifId < 0)
+                    "invalid reply request"
+                else NotifReply.reply(pkg, notifId, text)
+                if (err == null) {
+                    sendEvent(conn, "log", JSONObject().put("msg", "reply sent to $pkg"))
+                } else {
+                    sendEvent(conn, "input_error", JSONObject().put("kind", "reply").put("hint", err))
+                }
             }
             "start_audio" -> startAudioCapture(conn)
             "stop_audio" -> {

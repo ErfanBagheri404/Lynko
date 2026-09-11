@@ -172,6 +172,12 @@ pub enum Command {
     Text {
         text: String,
     },
+    /// Reply to a phone notification via its RemoteInput action.
+    NotifReply {
+        app: String,
+        notif_id: i32,
+        text: String,
+    },
 }
 
 /// Events phone → desktop over the control link (JSON text frames).
@@ -189,6 +195,9 @@ pub enum Event {
         app: String,
         title: String,
         body: String,
+        /// Android notification id — needed to reply to this notification.
+        #[serde(default)]
+        notif_id: i32,
     },
     /// Reply to `Command::Paste`.
     ClipboardReply {

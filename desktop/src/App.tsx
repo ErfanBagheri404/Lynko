@@ -92,6 +92,7 @@ interface NoteItem {
   title: string;
   body: string;
   at: number;
+  notifId?: number;
 }
 
 type View = "devices" | "screen" | "clipboard" | "files" | "notifications" | "audio" | "settings";
@@ -172,7 +173,17 @@ export default function App() {
         if (kind === "accessibility") toast("Taps & swipes need Accessibility: open Settings → Accessibility → Lynko → enable", "err");
         else if (kind === "field") toast("No focused text field on the phone — tap one in the mirror first", "err");
       } else if (ev.t === "notification") {
-        setNotes((n) => [{ id: ++toastUid, app: ev.d.app as string, title: ev.d.title as string, body: ev.d.body as string, at: Date.now() }, ...n].slice(0, 50));
+        const app = ev.d.app as string, title = ev.d.title as string, body = (ev.d.text ?? ev.d.body) as string;
+        setNotes((n) => [{ id: ++toastUid, app, title, body, at: Date.now(), notifId: (ev.d.notifId as number) ?? 0 }, ...n].slice(0, 50));
+        // Native OS toast (Samsung Flow parity: alerts while you work on the PC)
+        void (async () => {
+          try {
+            const { isPermissionGranted, requestPermission, sendNotification } = await import("@tauri-apps/plugin-notification");
+            let granted = await isPermissionGranted();
+            if (!granted) granted = (await requestPermission()) === "granted" || (await isPermissionGranted());
+            if (granted) sendNotification({ title: `${title} — ${app}`, body });
+          } catch { /* plugin missing in dev: silent */ }
+        })();
       }
     }).then((u) => unsubs.push(u));
 
@@ -814,9 +825,23 @@ function FilesView(props: ShellProps) {
 /* ------------------------------------------------------------------ */
 
 function NotificationsView(props: ShellProps) {
-  const { lang } = props;
+  const { lang, link } = props;
   const T = (k: string) => tr(lang, "desktop", k);
-  const { notes } = props;
+  const { notes, toast } = props;
+  const [replyTo, setReplyTo] = useState<NoteItem | null>(null);
+  const [replyText, setReplyText] = useState("");
+
+  const sendReply = async () => {
+    if (!replyTo || !replyText.trim()) return;
+    try {
+      await api.invoke("notif_reply", { app: replyTo.app, notifId: replyTo.notifId ?? 0, text: replyText });
+      toast(`Reply sent to ${replyTo.app}`, "ok");
+      setReplyTo(null); setReplyText("");
+    } catch (e) {
+      toast(String(e), "err");
+    }
+  };
+
   return (
     <div className="view">
       <PageHead title={T("notif_title")} sub={T("notif_sub")} />
@@ -827,10 +852,27 @@ function NotificationsView(props: ShellProps) {
               <div className="note-app">{n.app}</div>
               <p className="note-title">{n.title}</p>
               <p className="note-body">{n.body}</p>
+              {link.connected && <button className="ghost" onClick={() => setReplyTo(n)}>reply</button>}
             </div>
           ))
         }
       </div>
+      {replyTo && (
+        <div className="card reply-box">
+          <p className="desc">Replying to <strong>{replyTo.title}</strong> ({replyTo.app})</p>
+          <div className="row">
+            <input
+              autoFocus
+              value={replyText}
+              onChange={(e) => setReplyText(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") void sendReply(); }}
+              placeholder="Type your reply…"
+            />
+            <button onClick={() => void sendReply()}>Send</button>
+            <button className="ghost" onClick={() => { setReplyTo(null); setReplyText(""); }}>Cancel</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -588,6 +588,11 @@ fn send_copy(state: State<'_, LynkoState>, text: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn notif_reply(state: State<'_, LynkoState>, app: String, notifId: i32, text: String) -> Result<(), String> {
+    send_cmd(&state, &Command::NotifReply { app, notif_id: notifId, text })
+}
+
+#[tauri::command]
 fn request_paste(state: State<'_, LynkoState>) -> Result<(), String> {
     send_cmd(&state, &Command::Paste)
 }
@@ -857,6 +862,7 @@ fn main() {
             connect,
             disconnect,
             send_copy,
+            notif_reply,
             request_paste,
             request_status,
             screen_start,
