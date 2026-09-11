@@ -108,112 +108,135 @@ object InputInjector {
     // move. A boolean gate that fails to reset is how "nothing works
     // anymore" happens.
 
+    private const val SEG_MS = 300L      // live stroke window (VPN-jitter tolerant)
+    private const val MIN_PATH_MS = 120L // replayed gesture: never faster than a real tap-hold
+    private const val MAX_PATH_MS = 900L // ...never slower than a long-press trigger
+    private const val MAX_POINTS = 64
+
     private var dragStroke: GestureDescription.StrokeDescription? = null
-    private var dragLast: Pair<Float, Float>? = null
-    private var dragCtx: Context? = null
+    private var dragLastPx: Pair<Float, Float>? = null
+    private var dragLive = false
+    private var dragT0 = 0L
+    private val dragPts = ArrayList<Pair<Float, Float>>(MAX_POINTS)
 
     fun dragStart(ctx: Context, x01: Float, y01: Float): Boolean {
         val svc = LynkoAccessibilityService.instance ?: return false
-        dragCtx = ctx.applicationContext
         val sz = ScreenSize.size(ctx)
-        val x = x01 * sz.x
-        val y = y01 * sz.y
-        val path = Path().apply { moveTo(x, y) }
-        // A zero-length stroke is illegal; nudge 1px so the down registers.
-        path.lineTo(x + 1f, y)
-        dragStroke = GestureDescription.StrokeDescription(path, 0, 60, true)
-        dragLast = Pair(x01, y01)
-        val ok = svc.dispatchGesture(
-            GestureDescription.Builder().addStroke(dragStroke!!).build(), null, null)
-        Log.i("lynko", "dragStart ($x01,$y01) ok=$ok")
-        return ok
+        val px = x01.coerceIn(0f, 1f) * sz.x
+        val py = y01.coerceIn(0f, 1f) * sz.y
+        dragStroke = null
+        dragLive = false
+        dragPts.clear()
+        dragPts.add(px to py)
+        dragLastPx = px to py
+        dragT0 = android.os.SystemClock.uptimeMillis()
+        // A zero-length stroke is illegal; nudge 1px so the press registers.
+        val path = Path().apply { moveTo(px, py); lineTo(px + 1f, py) }
+        val down = GestureDescription.StrokeDescription(path, 0L, SEG_MS, true)
+        val ok = try {
+            svc.dispatchGesture(GestureDescription.Builder().addStroke(down).build(), null, null)
+        } catch (t: Throwable) {
+            Log.w("lynko", "dragStart threw ${t.javaClass.simpleName}: ${t.message}")
+            false
+        }
+        if (ok) { dragStroke = down; dragLive = true }
+        // Returns true regardless: the drag resolves on release either way
+        // (live chain, or the recorded replay below).
+        Log.i("lynko", "dragStart ($x01,$y01) live=$dragLive")
+        return true
     }
 
     fun dragMove(ctx: Context, x01: Float, y01: Float): Boolean {
         val svc = LynkoAccessibilityService.instance ?: return false
-        if (dragStroke == null) {
-            // Chain broken mid-drag (jitter/stale stroke): re-open at the
-            // latest point so the drag continues instead of dying.
-            return dragStart(ctx, x01, y01)
-        }
-        // Pipeline: dispatch immediately without waiting for the previous
-        // segment's callback. Over VPN the callback round-trip is slower
-        // than pointer movement — gating on it serialized ~500ms per
-        // segment ("gesture only fires after I release").
-        continueFrom(ctx, svc, x01, y01)
-        return true
-    }
-
-    private fun continueFrom(ctx: Context, svc: LynkoAccessibilityService, x01: Float, y01: Float) {
-        val prev = dragStroke
-        val last = dragLast
-        if (prev == null || last == null) return
         val sz = ScreenSize.size(ctx)
-        val nx = x01 * sz.x
-        val ny = y01 * sz.y
-        val lx = last.first * sz.x
-        val ly = last.second * sz.y
-        if (kotlin.math.abs(nx - lx) < 1f && kotlin.math.abs(ny - ly) < 1f) {
-            // Degenerate segment: skip dispatch but advance the anchor so the
-            // stroke timeline keeps tracking the pointer.
-            dragLast = Pair(x01, y01)
-            return
+        val px = x01.coerceIn(0f, 1f) * sz.x
+        val py = y01.coerceIn(0f, 1f) * sz.y
+        if (dragPts.size < MAX_POINTS) dragPts.add(px to py)
+        val prev = dragStroke
+        val last = dragLastPx
+        if (prev == null || last == null || !dragLive) return false // recorded: buffered only
+        // Degenerate (<1px) segment: illegal, so advance the anchor but skip
+        // the dispatch — the stroke timeline keeps tracking the pointer.
+        if (kotlin.math.abs(px - last.first) < 1f && kotlin.math.abs(py - last.second) < 1f) {
+            dragLastPx = px to py
+            return true
         }
-        val path = Path().apply {
-            moveTo(lx, ly)
-            lineTo(nx, ny)
+        val path = Path().apply { moveTo(last.first, last.second); lineTo(px, py) }
+        val cont = try { prev.continueStroke(path, 0L, SEG_MS, true) } catch (t: Throwable) { null }
+        if (cont == null) {
+            dragLive = false; dragStroke = null
+            Log.w("lynko", "dragMove chain expired -> recorded mode")
+            return false
         }
-        val stroke = prev.continueStroke(path, 0, 500, true)
-        dragStroke = stroke
-        dragLast = Pair(x01, y01)
-        val ok = svc.dispatchGesture(
-            GestureDescription.Builder().addStroke(stroke).build(), null, null)
-        if (!ok) {
-            // Window already expired: drop the dead chain; the next dragMove
-            // re-opens at the newest point via the dragStroke==null path.
-            dragStroke = null
-            dragLast = Pair(x01, y01)
+        val ok = try {
+            svc.dispatchGesture(GestureDescription.Builder().addStroke(cont).build(), null, null)
+        } catch (t: Throwable) { false }
+        if (ok) {
+            dragStroke = cont
+            dragLastPx = px to py
+        } else {
+            dragLive = false; dragStroke = null
+            Log.w("lynko", "dragMove dispatch refused -> recorded mode")
         }
+        return ok
     }
 
     fun dragEnd(ctx: Context, x01: Float, y01: Float): Boolean {
         val svc = LynkoAccessibilityService.instance ?: return false
-        val prev = dragStroke
-        val last = dragLast
-        dragStroke = null
-        dragLast = null
-        dragCtx = null
-        if (prev == null || last == null) return true // nothing down: no-op
         val sz = ScreenSize.size(ctx)
-        val nx = x01 * sz.x
-        val ny = y01 * sz.y
-        val lx = last.first * sz.x
-        val ly = last.second * sz.y
-        // Degenerate final segment (tap-release, tiny drag): nudge 1px so the
-        // continuation is legal — a zero-length line aborts the WHOLE gesture
-        // and the finger stays down forever.
-        val ex = if (kotlin.math.abs(nx - lx) < 1f) lx + 1f else nx
-        val ey = if (kotlin.math.abs(ny - ly) < 1f) ly + 1f else ny
-        val path = Path().apply {
-            moveTo(lx, ly)
-            lineTo(ex, ey)
-        }
-        val stroke = prev.continueStroke(path, 0, 100, false) // lifts the finger
-        val ok = svc.dispatchGesture(
-            GestureDescription.Builder().addStroke(stroke).build(), null, null)
-        if (!ok) {
-            // Last resort: a fresh tap-like stroke guarantees nothing stays
-            // pressed on the phone.
-            val lift = Path().apply {
-                moveTo(ex, ey)
-                lineTo(ex + 1f, ey)
+        val px = x01.coerceIn(0f, 1f) * sz.x
+        val py = y01.coerceIn(0f, 1f) * sz.y
+        if (dragPts.size < MAX_POINTS) dragPts.add(px to py)
+        val prev = dragStroke
+        val last = dragLastPx
+        val live = dragLive && prev != null && last != null
+        dragStroke = null
+        dragLastPx = null
+        dragLive = false
+        val started = dragT0
+        dragT0 = 0L
+        val pts = ArrayList(dragPts)
+        dragPts.clear()
+
+        if (live && prev != null && last != null) {
+            val ex = if (kotlin.math.abs(px - last.first) < 1f) last.first + 1f else px
+            val ey = if (kotlin.math.abs(py - last.second) < 1f) last.second + 1f else py
+            val path = Path().apply { moveTo(last.first, last.second); lineTo(ex, ey) }
+            val up = try { prev.continueStroke(path, 0L, 15L, false) } catch (t: Throwable) { null }
+            if (up != null) {
+                val ok = try {
+                    svc.dispatchGesture(GestureDescription.Builder().addStroke(up).build(), null, null)
+                } catch (t: Throwable) { false }
+                if (ok) {
+                    Log.i("lynko", "dragEnd ($x01,$y01) live lift")
+                    return true
+                }
             }
-            svc.dispatchGesture(
-                GestureDescription.Builder()
-                    .addStroke(GestureDescription.StrokeDescription(lift, 0, 40))
-                    .build(), null, null)
+            Log.w("lynko", "dragEnd live lift failed -> replaying full path")
         }
-        Log.i("lynko", "dragEnd ($x01,$y01) ok=$ok")
+
+        // Recorded replay (also the live-mode fallback): the ENTIRE stroke as
+        // one self-contained gesture — every buffered point, ending in a real
+        // lift. This is what makes a swipe impossible to lose or strand: no
+        // continuation windows to expire, nothing can hold the finger down.
+        if (pts.isEmpty()) return true
+        val first = pts.first()
+        val lastPt = if (pts.last() == first && pts.size == 1) (first.first + 1f) to first.second else pts.last()
+        val path = Path().apply {
+            moveTo(first.first, first.second)
+            for ((qx, qy) in pts) lineTo(qx, qy)
+            lineTo(lastPt.first + 0.5f, lastPt.second)
+        }
+        // Replay over the time the user ACTUALLY took (clamped): a fast flick
+        // keeps its velocity so the phone adds scroll momentum; a slow pull
+        // stays a drag (drag-to-reorder, sliders).
+        val elapsed = (android.os.SystemClock.uptimeMillis() - started)
+            .coerceIn(MIN_PATH_MS, MAX_PATH_MS)
+        val stroke = GestureDescription.StrokeDescription(path, 0L, elapsed)
+        val ok = try {
+            svc.dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), null, null)
+        } catch (t: Throwable) { false }
+        Log.i("lynko", "dragEnd ($x01,$y01) replay ${pts.size}pts/${elapsed}ms ok=$ok")
         return ok
     }
 

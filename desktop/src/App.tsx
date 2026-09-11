@@ -644,7 +644,6 @@ function ScreenView(props: ShellProps) {
             }
           }}
           onKeyDown={(e) => { e.currentTarget.focus(); onKey(e); }}
-          title={streaming ? T("click_tap_hint") : undefined}
         >
           {frame || frameArrived.current ? (
             <img ref={imgRef} src={frame ?? undefined} alt="phone screen" draggable={false} />

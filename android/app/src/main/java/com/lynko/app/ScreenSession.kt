@@ -1,11 +1,15 @@
 package com.lynko.app
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Bitmap
 import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
 import android.media.ImageReader
 import android.media.projection.MediaProjection
+import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.util.Log
@@ -14,12 +18,17 @@ import java.io.ByteArrayOutputStream
 /** MediaProjection capture -> JPEG frames. Projection is created ONCE by
  * LinkService (consent tokens are single-use) and passed in here.
  *
- * Threading: ALL teardown runs on the frame handler thread — closing the
- * reader from another thread while a callback is mid-copy segfaults
- * (Bitmap_copyPixelsFromBuffer use-after-free). Posting teardown to the
- * same looper serializes it after any in-flight frame callback. */
+ * Threading: ALL pipeline work (build/teardown/frame callbacks) runs on the
+ * frame handler thread — closing the reader from another thread while a
+ * callback is mid-copy segfaults (Bitmap_copyPixelsFromBuffer use-after-free).
+ *
+ * Screen lock: with AUTO_MIRROR, turning the physical display off stops the
+ * compositor feed and on MIUI it does NOT resume on unlock — the mirror goes
+ * permanently black. Fix: rebuild the whole capture pipeline (fresh
+ * ImageReader + fresh VirtualDisplay re-attached to the same projection)
+ * whenever the screen turns back on. */
 class ScreenSession(
-    context: Context,
+    private val context: Context,
     private val projection: MediaProjection,
     private val onFrame: (ByteArray) -> Unit,
 ) {
@@ -49,21 +58,54 @@ class ScreenSession(
     private val baos = ByteArrayOutputStream(256 * 1024)
 
     /** Backpressure feedback from LinkService: when frames are being dropped
-     * on the send side, step JPEG quality down (floor 35) until the link
-     * drains; recover slowly (+5) when two consecutive frames go through. */
+     * on the send side, step JPEG quality down (floor 50) until the link
+     * drains; recover slowly when frames go through again. */
     fun noteDrop() { drops++; if (drops % 3 == 0 && jpegQuality > 50) jpegQuality -= 10 }
 
     private var virtualDisplay: android.hardware.display.VirtualDisplay? = null
     private var reader: ImageReader? = null
     private var thread: HandlerThread? = null
+    private var handler: Handler? = null
 
     @Volatile private var running = false
+
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(c: Context?, i: Intent?) {
+            if (i?.action == Intent.ACTION_SCREEN_ON) {
+                Log.i("lynko", "screen on — rebuilding capture pipeline")
+                handler?.post { buildPipeline("rebuild-after-unlock") }
+            }
+        }
+    }
 
     fun start() {
         // ImageReader callbacks need a looper — the WS thread has none, so
         // give the reader its own background handler thread.
         thread = HandlerThread("lynko-frames").also { it.start() }
-        val handler = Handler(thread!!.looper)
+        handler = Handler(thread!!.looper)
+        running = true
+
+        val f = IntentFilter(Intent.ACTION_SCREEN_ON)
+        if (Build.VERSION.SDK_INT >= 33) {
+            context.registerReceiver(screenReceiver, f, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            context.registerReceiver(screenReceiver, f)
+        }
+
+        handler?.post { buildPipeline("start") }
+    }
+
+    /** Idempotent: tears down any existing reader/display, then creates a
+     * fresh pair. Called from start() and on every SCREEN_ON. Must run on
+     * the frame handler thread. */
+    private fun buildPipeline(why: String) {
+        // Drop the old pipeline first (in case this is a rebuild).
+        virtualDisplay?.release()
+        virtualDisplay = null
+        reader?.close()
+        reader = null
+        lastFrameAt = 0L
 
         val r = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 4)
         reader = r
@@ -109,12 +151,13 @@ class ScreenSession(
             DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
             r.surface, null, null
         )
-        running = true
-        Log.i("lynko", "screen session started ${width}x${height}@$density")
+        Log.i("lynko", "capture pipeline up ($why) ${width}x${height}@$density")
     }
 
     fun stop() {
-        val h = thread?.looper?.let { Handler(it) }
+        running = false
+        try { context.unregisterReceiver(screenReceiver) } catch (_: Exception) {}
+        val h = handler
         if (h != null) {
             h.post { teardown() }
         } else {
@@ -124,13 +167,13 @@ class ScreenSession(
 
     /** Runs on the lynko-frames looper — after any in-flight callback. */
     private fun teardown() {
-        running = false
         virtualDisplay?.release()
         virtualDisplay = null
         reader?.close()
         reader = null
         thread?.quitSafely()
         thread = null
+        handler = null
         Log.i("lynko", "screen session stopped")
     }
 }

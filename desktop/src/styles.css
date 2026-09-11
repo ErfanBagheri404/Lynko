@@ -963,7 +963,7 @@ html[lang="fa"] .pin {
 
 /* ── Screen view: interactive canvas ─────────────────── */
 .screen-canvas.interactive {
-  cursor: crosshair;
+  cursor: default;
   outline: none;
   position: relative;
 }

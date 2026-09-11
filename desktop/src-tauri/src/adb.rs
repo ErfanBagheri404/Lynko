@@ -77,8 +77,8 @@ pub async fn list_devices() -> Result<Vec<UsbDevice>> {
         if parts.len() < 2 { continue; }
         let serial = parts[0].to_string();
         let state = parts[1].to_string();
-        // Skip offline/unauthorized — can't forward to them
         if state != "device" { continue; }
+        if serial.starts_with("emulator") { continue; }
         let model = parts
             .iter()
             .find(|p| p.starts_with("model:"))
