@@ -418,7 +418,7 @@ function DevicesView({ devices, link, toast, lang }: ShellProps) {
                 <span className={d.online ? "dev-dot on" : "dev-dot off"} />
                 <div className="who">
                   <strong>{d.name}</strong>
-                  <span className="addr">{d.address}</span>
+                  <span className="addr">{d.id.startsWith("usb:") ? "USB" : d.address}</span>
                 </div>
                 <div className="act">
                   {d.online && (
@@ -438,7 +438,7 @@ function DevicesView({ devices, link, toast, lang }: ShellProps) {
               {unpaired.map((d) => (
                 <div key={d.id} className="devrow">
                   <span className="dev-dot on" />
-                  <div className="who"><strong>{d.name}</strong><span className="addr">{d.address}</span></div>
+                  <div className="who"><strong>{d.name}</strong><span className="addr">{d.id.startsWith("usb:") ? "USB" : d.address}</span></div>
                   <button className="btn sm primary" onClick={() => pair(d)}>{T("pair")}</button>
                 </div>
               ))}

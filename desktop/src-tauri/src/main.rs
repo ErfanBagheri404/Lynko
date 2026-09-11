@@ -1,6 +1,8 @@
 // Prevent a console window on Windows release builds
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod adb;
+
 use futures_util::{SinkExt, StreamExt};
 use lynko_core::{
     Capabilities, Command, Event, PairRequest, PairResponse,
@@ -128,6 +130,114 @@ impl LynkoState {
             let _ = app.emit("discovery", &self.merged());
         }
     }
+}
+
+/* ------------------------------------------------------------------ */
+/* USB transport — adb localhost forwards (method per Zfinix/another)  */
+/* ------------------------------------------------------------------ */
+
+/// One USB phone entry in the discovered map. Address is always
+/// 127.0.0.1 because adb forwards localhost:791x → device:791x over the
+/// cable; pair/link/transfer code paths are unchanged.
+fn usb_device_entry(serial: &str, model: &str) -> Device {
+    Device {
+        id: format!("usb:{serial}"),
+        name: if model.is_empty() { format!("USB device {serial}") } else { model.to_string() },
+        address: "127.0.0.1".into(),
+        caps: Capabilities {
+            screen_capture: true,
+            input_injection: true,
+            text_input: true,
+            clipboard_sync: true,
+            file_transfer: true,
+            notifications: true,
+            audio_capture: false,
+            battery_status: true,
+        },
+        paired: false,
+        online: true,
+    }
+}
+
+/// Poll `adb devices` every 2s. On appear: set up the three port forwards
+/// and insert/refresh a `usb:<serial>` device. On disappear: mark offline,
+/// tear down forwards, drop the live link if it pointed at this device.
+fn start_usb_watch(app: AppHandle) {
+    std::thread::spawn(move || {
+        let state = app.state::<LynkoState>();
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+        loop {
+            let devices = match tauri::async_runtime::block_on(adb::list_devices()) {
+                Ok(d) => d,
+                Err(_) => {
+                    // adb missing entirely → nothing to do this cycle
+                    if !seen.is_empty() { seen.clear(); state.emit_devices(); }
+                    std::thread::sleep(Duration::from_secs(4));
+                    continue;
+                }
+            };
+
+            let mut changed = false;
+            let current: std::collections::HashSet<String> =
+                devices.iter().map(|d| d.serial.clone()).collect();
+
+            // Disappeared devices
+            for gone in seen.difference(&current) {
+                let id = format!("usb:{gone}");
+                let mut disc = state.discovered.lock().unwrap();
+                if let Some(d) = disc.get_mut(&id) { d.online = false; }
+                drop(disc);
+                let mut link = state.link.lock().unwrap();
+                if let Some(l) = link.as_ref() {
+                    if l.device_id == id {
+                        l.alive.store(false, Ordering::SeqCst);
+                        *link = None;
+                        drop(link);
+                        if let Some(a) = state.app.lock().unwrap().as_ref() {
+                            let _ = a.emit("link_state", serde_json::json!({ "connected": false }));
+                            let _ = a.emit("log", serde_json::json!({ "msg": "usb device unplugged" }));
+                        }
+                    }
+                }
+                let _ = tauri::async_runtime::block_on(adb::remove_all_forwards(gone));
+                changed = true;
+            }
+
+            // Appeared / still-present devices
+            for dev in &devices {
+                let id = format!("usb:{}", dev.serial);
+                if seen.contains(&dev.serial) {
+                    // Refresh online flag if a previous cycle marked it offline
+                    let mut disc = state.discovered.lock().unwrap();
+                    if let Some(d) = disc.get_mut(&id) {
+                        if !d.online { d.online = true; changed = true; }
+                    }
+                    continue;
+                }
+                match tauri::async_runtime::block_on(adb::setup_forwards(&dev.serial)) {
+                    Ok(()) => {
+                        state.discovered.lock().unwrap().insert(
+                            id.clone(),
+                            usb_device_entry(&dev.serial, &dev.model),
+                        );
+                        if let Some(a) = state.app.lock().unwrap().as_ref() {
+                            let _ = a.emit("log", serde_json::json!({ "msg": format!("usb device connected: {}", dev.model) }));
+                        }
+                        seen.insert(dev.serial.clone());
+                        changed = true;
+                    }
+                    Err(e) => {
+                        if let Some(a) = state.app.lock().unwrap().as_ref() {
+                            let _ = a.emit("log", serde_json::json!({ "msg": format!("usb forward setup failed for {}: {e}", dev.model) }));
+                        }
+                    }
+                }
+            }
+
+            if changed { state.emit_devices(); }
+            std::thread::sleep(Duration::from_secs(2));
+        }
+    });
 }
 
 fn pairs_path(app: &AppHandle) -> std::path::PathBuf {
@@ -734,7 +844,8 @@ fn main() {
                 app: Mutex::new(Some(handle.clone())),
                 link_gen: AtomicU64::new(0),
             });
-            start_discovery(handle);
+            start_discovery(handle.clone());
+            start_usb_watch(handle.clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
