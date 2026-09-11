@@ -51,9 +51,9 @@ object InputInjector {
             Log.w("lynko", "tap ignored — accessibility service not enabled")
             return false
         }
-        val metrics = ctx.resources.displayMetrics
-        val x = x01 * metrics.widthPixels
-        val y = y01 * metrics.heightPixels
+        val sz = ScreenSize.size(ctx)
+        val x = x01 * sz.x
+        val y = y01 * sz.y
         val path = Path().apply { moveTo(x, y) }
         val stroke = GestureDescription.StrokeDescription(path, 0, 80)
         svc.dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), null, null)
@@ -66,10 +66,10 @@ object InputInjector {
             Log.w("lynko", "swipe ignored — accessibility service not enabled")
             return false
         }
-        val metrics = ctx.resources.displayMetrics
+        val sz = ScreenSize.size(ctx)
         val path = Path().apply {
-            moveTo(x1 * metrics.widthPixels, y1 * metrics.heightPixels)
-            lineTo(x2 * metrics.widthPixels, y2 * metrics.heightPixels)
+            moveTo(x1 * sz.x, y1 * sz.y)
+            lineTo(x2 * sz.x, y2 * sz.y)
         }
         // Final stroke (no willContinue): the pointer must LIFT at the end.
         // A willContinue stroke holds the finger down awaiting a continuation
@@ -90,11 +90,17 @@ object InputInjector {
     // LAN, fatal over VPN where packets land 50-300ms apart: the window
     // expires, dispatchGesture rejects the orphaned continuation, the finger
     // sticks down and every later gesture is refused. Hence:
-    //  - 500ms segment windows (tolerant of jittered arrival);
-    //  - a `gestureBusy` gate: never overlap two dispatchGestures, queue the
-    //    newest point and continue the live stroke from it;
-    //  - self-heal: if dispatchGesture returns false, close the old stroke
-    //    and restart at the latest point — the drag survives instead of dying.
+    //  - long segment windows (tolerant of jittered arrival);
+    //  - continuations are dispatched IMMEDIATELY, without waiting for the
+    //    previous segment's onCompleted — Android pipelines them on the
+    //    input channel. Waiting serialized 500ms per segment (the
+    //    "gesture only fires after I release" bug).
+    //  - self-heal: if the chain does break (window expired), close the old
+    //    stroke and restart at the newest point — the drag survives.
+    //
+    // Sub-pixel segments are coalesced: injecting a 0.2px "move" is not just
+    // wasteful, a zero-length segment is ILLEGAL and gets the whole gesture
+    // cancelled. dragEnd nudges 1px when the segment is degenerate.
 
     private var dragStroke: GestureDescription.StrokeDescription? = null
     private var dragLast: Pair<Float, Float>? = null
@@ -105,13 +111,13 @@ object InputInjector {
     fun dragStart(ctx: Context, x01: Float, y01: Float): Boolean {
         val svc = LynkoAccessibilityService.instance ?: return false
         dragCtx = ctx.applicationContext
-        val metrics = ctx.resources.displayMetrics
-        val x = x01 * metrics.widthPixels
-        val y = y01 * metrics.heightPixels
+        val sz = ScreenSize.size(ctx)
+        val x = x01 * sz.x
+        val y = y01 * sz.y
         val path = Path().apply { moveTo(x, y) }
         // A zero-length stroke is illegal; nudge 1px so the down registers.
         path.lineTo(x + 1f, y)
-        dragStroke = GestureDescription.StrokeDescription(path, 0, 500, true)
+        dragStroke = GestureDescription.StrokeDescription(path, 0, 60, true)
         dragLast = Pair(x01, y01)
         pendingMove = null
         gestureBusy = true
@@ -148,10 +154,20 @@ object InputInjector {
         val prev = dragStroke
         val last = dragLast
         if (prev == null || last == null) return
-        val metrics = ctx.resources.displayMetrics
+        val sz = ScreenSize.size(ctx)
+        val nx = x01 * sz.x
+        val ny = y01 * sz.y
+        val lx = last.first * sz.x
+        val ly = last.second * sz.y
+        if (kotlin.math.abs(nx - lx) < 1f && kotlin.math.abs(ny - ly) < 1f) {
+            // Degenerate segment: skip dispatch but advance the anchor so the
+            // stroke timeline keeps tracking the pointer.
+            dragLast = Pair(x01, y01)
+            return
+        }
         val path = Path().apply {
-            moveTo(last.first * metrics.widthPixels, last.second * metrics.heightPixels)
-            lineTo(x01 * metrics.widthPixels, y01 * metrics.heightPixels)
+            moveTo(lx, ly)
+            lineTo(nx, ny)
         }
         val stroke = prev.continueStroke(path, 0, 500, true)
         dragStroke = stroke
@@ -190,10 +206,19 @@ object InputInjector {
         dragLast = null
         dragCtx = null
         if (prev == null || last == null) return true // nothing down: no-op
-        val metrics = ctx.resources.displayMetrics
+        val sz = ScreenSize.size(ctx)
+        val nx = x01 * sz.x
+        val ny = y01 * sz.y
+        val lx = last.first * sz.x
+        val ly = last.second * sz.y
+        // Degenerate final segment (tap-release, tiny drag): nudge 1px so the
+        // continuation is legal — a zero-length line aborts the WHOLE gesture
+        // and the finger stays down forever.
+        val ex = if (kotlin.math.abs(nx - lx) < 1f) lx + 1f else nx
+        val ey = if (kotlin.math.abs(ny - ly) < 1f) ly + 1f else ny
         val path = Path().apply {
-            moveTo(last.first * metrics.widthPixels, last.second * metrics.heightPixels)
-            lineTo(x01 * metrics.widthPixels, y01 * metrics.heightPixels)
+            moveTo(lx, ly)
+            lineTo(ex, ey)
         }
         val stroke = prev.continueStroke(path, 0, 100, false) // lifts the finger
         gestureBusy = true
@@ -208,8 +233,8 @@ object InputInjector {
             // Last resort: a fresh tap-like stroke guarantees nothing stays
             // pressed on the phone.
             val lift = Path().apply {
-                moveTo(x01 * metrics.widthPixels, y01 * metrics.heightPixels)
-                lineTo(x01 * metrics.widthPixels + 1f, y01 * metrics.heightPixels)
+                moveTo(ex, ey)
+                lineTo(ex + 1f, ey)
             }
             svc.dispatchGesture(
                 GestureDescription.Builder()

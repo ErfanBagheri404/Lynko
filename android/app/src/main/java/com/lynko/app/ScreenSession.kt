@@ -29,9 +29,15 @@ class ScreenSession(
     // 4x fewer pixels is 4x faster AND the desktop decodes 4x smaller
     // frames. Touch coords stay normalized — taps map onto the 720p
     // surface exactly as they did onto the native one.
-    private val scaleToDisplay = (720f / metrics.widthPixels).coerceAtMost(1f)
-    private val width = (metrics.widthPixels * scaleToDisplay).toInt().coerceAtLeast(360)
-    private val height = (metrics.heightPixels * scaleToDisplay).toInt().coerceAtLeast(720)
+    //
+    // Size source: PHYSICAL panel via ScreenSize (system bars included).
+    // Service displayMetrics returns the app window (2400-136=2264 on this
+    // device), which produced a 720x1510 VirtualDisplay on a 1080x2400
+    // panel — wrong aspect, taps mapped 37% off vertically.
+    private val realSize = ScreenSize.size(context)
+    private val scaleToDisplay = (720f / realSize.x).coerceAtMost(1f)
+    private val width = (realSize.x * scaleToDisplay).toInt().coerceAtLeast(360)
+    private val height = (realSize.y * scaleToDisplay).toInt().coerceAtLeast(720)
     private val density = (metrics.densityDpi * scaleToDisplay).toInt().coerceAtLeast(120)
     private var lastFrameAt = 0L
     private var jpegQuality = 75

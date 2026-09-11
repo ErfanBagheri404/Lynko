@@ -58,6 +58,10 @@ object VpnGuard {
 
         // 2. Long-lived watcher: fires on VPN toggles, Wi-Fi reconnects,
         //    capability changes. Re-binds when the *selected* network changes.
+        //    NOTE: registerNetworkCallback (listen), NOT requestNetwork —
+        //    the latter demands CHANGE_NETWORK_STATE/WRITE_SETTINGS
+        //    (privileged system grants) and throws SecurityException for a
+        //    normal app; logcat on MIUI proved it never armed the watcher.
         val request = NetworkRequest.Builder()
             .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
             .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
@@ -75,10 +79,10 @@ object VpnGuard {
             }
         }
         try {
-            cm.requestNetwork(request, callback!!)
+            cm.registerNetworkCallback(request, callback!!)
             Log.i(TAG, "vpn-guard armed on Wi-Fi (non-VPN)")
         } catch (e: Exception) {
-            Log.w(TAG, "requestNetwork failed: ${e.message}")
+            Log.w(TAG, "registerNetworkCallback failed: ${e.message}")
         }
     }
 
