@@ -20,6 +20,7 @@
     <application
         android:label="Lynko"
         android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:theme="@style/Theme.Lynko"
         android:allowBackup="false"
         android:supportsRtl="true">
