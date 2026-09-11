@@ -102,10 +102,14 @@ object InputInjector {
     // wasteful, a zero-length segment is ILLEGAL and gets the whole gesture
     // cancelled. dragEnd nudges 1px when the segment is degenerate.
 
+    // State is minimal on purpose: the stroke chain itself is the only
+    // state. No busy-gating — pipelined continuations either dispatch
+    // (return true) or the chain is dropped and self-heals on the next
+    // move. A boolean gate that fails to reset is how "nothing works
+    // anymore" happens.
+
     private var dragStroke: GestureDescription.StrokeDescription? = null
     private var dragLast: Pair<Float, Float>? = null
-    @Volatile private var gestureBusy = false
-    private var pendingMove: Pair<Float, Float>? = null
     private var dragCtx: Context? = null
 
     fun dragStart(ctx: Context, x01: Float, y01: Float): Boolean {
@@ -119,15 +123,8 @@ object InputInjector {
         path.lineTo(x + 1f, y)
         dragStroke = GestureDescription.StrokeDescription(path, 0, 60, true)
         dragLast = Pair(x01, y01)
-        pendingMove = null
-        gestureBusy = true
-        val cb = object : AccessibilityService.GestureResultCallback() {
-            override fun onCompleted(g: GestureDescription?) { gestureBusy = false; flushPending() }
-            override fun onCancelled(g: GestureDescription?) { gestureBusy = false; flushPending() }
-        }
         val ok = svc.dispatchGesture(
-            GestureDescription.Builder().addStroke(dragStroke!!).build(), cb, null)
-        if (!ok) gestureBusy = false
+            GestureDescription.Builder().addStroke(dragStroke!!).build(), null, null)
         Log.i("lynko", "dragStart ($x01,$y01) ok=$ok")
         return ok
     }
@@ -139,13 +136,10 @@ object InputInjector {
             // latest point so the drag continues instead of dying.
             return dragStart(ctx, x01, y01)
         }
-        if (gestureBusy) {
-            // A segment is still being delivered — keep only the newest point
-            // and continue from it when the callback fires. Stale queued
-            // points are skipped: the stroke chases the pointer, not history.
-            pendingMove = Pair(x01, y01)
-            return true
-        }
+        // Pipeline: dispatch immediately without waiting for the previous
+        // segment's callback. Over VPN the callback round-trip is slower
+        // than pointer movement — gating on it serialized ~500ms per
+        // segment ("gesture only fires after I release").
         continueFrom(ctx, svc, x01, y01)
         return true
     }
@@ -172,34 +166,18 @@ object InputInjector {
         val stroke = prev.continueStroke(path, 0, 500, true)
         dragStroke = stroke
         dragLast = Pair(x01, y01)
-        gestureBusy = true
-        val cb = object : AccessibilityService.GestureResultCallback() {
-            override fun onCompleted(g: GestureDescription?) { gestureBusy = false; flushPending() }
-            override fun onCancelled(g: GestureDescription?) { gestureBusy = false; flushPending() }
-        }
         val ok = svc.dispatchGesture(
-            GestureDescription.Builder().addStroke(stroke).build(), cb, null)
+            GestureDescription.Builder().addStroke(stroke).build(), null, null)
         if (!ok) {
             // Window already expired: drop the dead chain; the next dragMove
             // re-opens at the newest point via the dragStroke==null path.
-            gestureBusy = false
             dragStroke = null
             dragLast = Pair(x01, y01)
         }
     }
 
-    private fun flushPending() {
-        val ctx = dragCtx ?: return
-        val svc = LynkoAccessibilityService.instance ?: return
-        val p = pendingMove ?: return
-        pendingMove = null
-        if (dragStroke == null) { dragStart(ctx, p.first, p.second); return }
-        continueFrom(ctx, svc, p.first, p.second)
-    }
-
     fun dragEnd(ctx: Context, x01: Float, y01: Float): Boolean {
         val svc = LynkoAccessibilityService.instance ?: return false
-        pendingMove = null
         val prev = dragStroke
         val last = dragLast
         dragStroke = null
@@ -221,15 +199,9 @@ object InputInjector {
             lineTo(ex, ey)
         }
         val stroke = prev.continueStroke(path, 0, 100, false) // lifts the finger
-        gestureBusy = true
-        val cb = object : AccessibilityService.GestureResultCallback() {
-            override fun onCompleted(g: GestureDescription?) { gestureBusy = false }
-            override fun onCancelled(g: GestureDescription?) { gestureBusy = false }
-        }
         val ok = svc.dispatchGesture(
-            GestureDescription.Builder().addStroke(stroke).build(), cb, null)
+            GestureDescription.Builder().addStroke(stroke).build(), null, null)
         if (!ok) {
-            gestureBusy = false
             // Last resort: a fresh tap-like stroke guarantees nothing stays
             // pressed on the phone.
             val lift = Path().apply {

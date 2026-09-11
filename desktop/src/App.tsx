@@ -486,20 +486,38 @@ function ScreenView(props: ShellProps) {
     try { await api.invoke("inject_drag_move", { x: p.x, y: p.y }); } catch {}
   };
 
-  const onDown = async (ev: React.PointerEvent) => {
+  const onDown = (ev: React.PointerEvent) => {
+    // Record only — do NOT press the phone finger yet. A click that never
+    // moves becomes a clean single tap on release; only REAL motion opens a
+    // stroke chain. (Pressing on pointerdown turned every tap into a
+    // continuation gesture whose window can expire mid-press and leave the
+    // phone finger stuck down — one stuck finger blocks every later
+    // gesture: "nothing works anymore".)
     const p = norm(ev);
     dragStart.current = p;
-    dragging.current = true;
     lastMove.current = p;
+    dragging.current = false;
     try { ev.currentTarget.setPointerCapture(ev.pointerId); } catch {}
-    // Start the phone-side stroke immediately: finger goes down while the
-    // desktop pointer is still moving, so the drag follows LIVE.
-    try { await api.invoke("inject_drag_start", { x: p.x, y: p.y }); } catch {}
   };
 
   const onMove = (ev: React.PointerEvent) => {
-    if (!dragging.current || !streaming) return;
+    if (!streaming) return;
     const p = norm(ev);
+    if (!dragging.current) {
+      const s = dragStart.current;
+      if (!s) return;
+      // 2% of screen ≈ 20px: below that, it's a click with a shaky hand.
+      if (Math.hypot(p.x - s.x, p.y - s.y) < 0.02) return;
+      dragging.current = true;
+      // Finger goes down at the ORIGIN, then chases the cursor — the phone
+      // sees one continuous press-drag like a real finger.
+      void (async () => {
+        try { await api.invoke("inject_drag_start", { x: s.x, y: s.y }); } catch {}
+        await sendMove(p);
+      })();
+      lastMove.current = p;
+      return;
+    }
     const dx = Math.abs(p.x - lastMove.current.x), dy = Math.abs(p.y - lastMove.current.y);
     if (dx < 0.008 && dy < 0.008) return; // throttle: segments only on real motion
     lastMove.current = p;
