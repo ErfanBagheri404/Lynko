@@ -361,7 +361,7 @@ jobs:
           git tag -a "$PER" -m "$BODY" "$GITHUB_SHA" 2>/dev/null || true
           git push origin "$PER" 2>/dev/null || true
           gh release create continuous \
-            --prerelease \
+            --latest \
             --title "Continuous — $SUBJECT" \
             --notes "$BODY
 
