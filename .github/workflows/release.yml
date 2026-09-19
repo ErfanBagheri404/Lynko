@@ -327,6 +327,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/download-artifact@v4
         with:
@@ -347,10 +349,23 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release delete continuous --yes --cleanup-tag 2>/dev/null || true
+          git config user.name "CI Bot"
+          git config user.email "ci@lynko.app"
+          SUBJECT=$(git log -1 --format='%s' "$GITHUB_SHA")
+          BODY=$(git log -1 --format='%B' "$GITHUB_SHA")
+          git tag -f -a continuous -m "$SUBJECT" "$GITHUB_SHA"
+          git push origin -f continuous
+          # Per-commit tag so every commit keeps its own build marker.
+          # Named build-* (never v*) so it can't re-trigger this workflow.
+          PER=$(printf 'build-%s-%s' "$(date -u +%Y%m%d)" "$(git rev-parse --short=7 "$GITHUB_SHA")")
+          git tag -a "$PER" -m "$BODY" "$GITHUB_SHA" 2>/dev/null || true
+          git push origin "$PER" 2>/dev/null || true
           gh release create continuous \
             --prerelease \
-            --title "Continuous build" \
-            --notes "Automated build from main @ ${{ github.sha }}. APKs are debug-signed until a release keystore is configured." \
+            --title "Continuous — $SUBJECT" \
+            --notes "$BODY
+
+          Build from main @ $GITHUB_SHA. APKs are debug-signed until a release keystore is configured." \
             flat/*
 
       - name: Publish stable release (tags)
