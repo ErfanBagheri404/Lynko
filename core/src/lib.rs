@@ -464,7 +464,10 @@ mod tests {
     fn file_and_audio_frames_stay_separate() {
         let chunk = encode_chunk("f-1", b"payload");
         assert!(matches!(decode_frame(&chunk), DecodedFrame::Chunk { .. }));
-        assert!(parse_audio_chunk(&chunk).is_none(), "file chunk is not audio");
+        assert!(
+            parse_audio_chunk(&chunk).is_none(),
+            "file chunk is not audio"
+        );
 
         let audio = encode_audio(48000, 2, &[1, 2, 3, 4]);
         assert!(parse_audio_chunk(&audio).is_some());
