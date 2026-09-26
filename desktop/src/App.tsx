@@ -10,6 +10,7 @@ import {IncomingShare} from "./enhancements/IncomingShare";
 import {usePreferences, readPreferences, useTransfers, type Preferences, type TransferItem} from './enhancements/hooks';
 import {filterNotification} from './enhancements/logic.mjs';
 import {HealthPanel, FeatureControls, PrivacyControls} from './enhancements/Panels';
+import {UpdateSection} from './enhancements/Update';
 import {text as extra} from './enhancements/strings';
 import './enhancements/styles.css';
 
@@ -1222,6 +1223,7 @@ function SettingsView(props: ShellProps) {
           <div className="what"><strong>{T("about")}</strong><span>{T("inspired_by")}</span></div>
         </div>
       </div>
+      <UpdateSection lang={lang}/>
     </div>
   );
 }

@@ -1061,6 +1061,127 @@ fn send_files_v2(state: State<'_, LynkoState>, paths: Vec<String>, request_id: O
 /* misc commands                                                       */
 /* ------------------------------------------------------------------ */
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct UpdateInfo {
+    pub current_version: String,
+    pub latest_version: String,
+    pub release_name: String,
+    pub release_notes: String,
+    pub published_at: String,
+    pub html_url: String,
+    pub has_update: bool,
+}
+
+/// Query the latest GitHub Release for Lynko. Fallback to /releases (taking the
+/// first entry) if /latest 404s (e.g. only pre-releases/continuous tags exist).
+/// Results cached for 10 minutes to respect the 60 req/hr unauth GitHub limit.
+#[tauri::command]
+async fn check_update() -> Result<UpdateInfo, String> {
+    static CACHE: tokio::sync::Mutex<Option<(std::time::Instant, UpdateInfo)>> =
+        tokio::sync::Mutex::const_new(None);
+
+    let mut lock = CACHE.lock().await;
+    if let Some((when, ref info)) = *lock {
+        if when.elapsed() < std::time::Duration::from_secs(600) {
+            return Ok(info.clone());
+        }
+    }
+
+    let client = reqwest::Client::builder()
+        .user_agent("Lynko-Desktop/0.1.0 (https://github.com/ErfanBagheri404/Lynko)")
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    // Try /releases/latest first; if 404, fallback to /releases
+    let url_latest = "https://api.github.com/repos/ErfanBagheri404/Lynko/releases/latest";
+    let resp = client.get(url_latest).send().await;
+    let json_val: serde_json::Value = match resp {
+        Ok(r) if r.status().is_success() => r.json().await.map_err(|e| e.to_string())?,
+        _ => {
+            // fallback: first entry of /releases
+            let url_all = "https://api.github.com/repos/ErfanBagheri404/Lynko/releases?per_page=1";
+            let r2 = client
+                .get(url_all)
+                .send()
+                .await
+                .map_err(|e| format!("Network error: {e}"))?;
+            if !r2.status().is_success() {
+                return Err(format!("GitHub API returned {}", r2.status()));
+            }
+            let arr: Vec<serde_json::Value> = r2.json().await.map_err(|e| e.to_string())?;
+            arr.into_iter().next().ok_or_else(|| "No releases found".to_string())?
+        }
+    };
+
+    let tag = json_val
+        .get("tag_name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let name = json_val
+        .get("name")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or(&tag)
+        .to_string();
+    let body = json_val
+        .get("body")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let published_at = json_val
+        .get("published_at")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let html_url = json_val
+        .get("html_url")
+        .and_then(|v| v.as_str())
+        .unwrap_or("https://github.com/ErfanBagheri404/Lynko/releases")
+        .to_string();
+
+    let cur = env!("CARGO_PKG_VERSION").to_string();
+    let clean_tag = tag.trim_start_matches('v').to_string();
+
+    // Semver check: parse major.minor.patch. Fallback: string inequality.
+    let has_update = is_newer(&cur, &clean_tag);
+
+    let info = UpdateInfo {
+        current_version: cur,
+        latest_version: clean_tag,
+        release_name: name,
+        release_notes: body,
+        published_at,
+        html_url,
+        has_update,
+    };
+    *lock = Some((std::time::Instant::now(), info.clone()));
+    Ok(info)
+}
+
+fn parse_semver(s: &str) -> Option<(u32, u32, u32)> {
+    let parts: Vec<&str> = s.split('.').collect();
+    if parts.len() < 2 {
+        return None;
+    }
+    let maj = parts[0].parse().ok()?;
+    let min = parts[1].parse().ok()?;
+    let pat = parts.get(2).and_then(|p| p.split('-').next()).and_then(|p| p.parse().ok()).unwrap_or(0);
+    Some((maj, min, pat))
+}
+
+fn is_newer(current: &str, candidate: &str) -> bool {
+    if candidate.is_empty() || candidate == current {
+        return false;
+    }
+    match (parse_semver(current), parse_semver(candidate)) {
+        (Some((c1, c2, c3)), Some((n1, n2, n3))) => (n1, n2, n3) > (c1, c2, c3),
+        // If candidate is a continuous build or non-semver tag, don't flag as newer than release
+        _ => false,
+    }
+}
+
 #[tauri::command]
 fn protocol_info() -> serde_json::Value {
     serde_json::json!({ "protocol_version": PROTOCOL_VERSION, "service_type": SERVICE_TYPE })
@@ -1250,8 +1371,37 @@ fn main() {
             transfer_receive::answer_transfer,
             transfer_receive::set_transfer_pin,
             set_pc_clipboard,
-            get_pc_clipboard
+            get_pc_clipboard,
+            check_update
         ])
         .run(tauri::generate_context!())
         .expect("error while running Lynko");
+}
+
+#[cfg(test)]
+mod update_tests {
+    use super::{is_newer, parse_semver};
+
+    #[test]
+    fn semver_parsing() {
+        assert_eq!(parse_semver("0.1.0"), Some((0, 1, 0)));
+        assert_eq!(parse_semver("1.2.3"), Some((1, 2, 3)));
+        // pre-release suffix is ignored
+        assert_eq!(parse_semver("1.2.3-rc1"), Some((1, 2, 3)));
+        assert_eq!(parse_semver("continuous"), None);
+        assert_eq!(parse_semver(""), None);
+        assert_eq!(parse_semver("1"), None);
+    }
+
+    #[test]
+    fn flags_only_genuinely_newer_versions() {
+        assert!(is_newer("0.1.0", "0.2.0"));
+        assert!(is_newer("0.1.0", "1.0.0"));
+        assert!(is_newer("0.9.9", "0.10.0"));
+        assert!(!is_newer("0.1.0", "0.1.0"));
+        assert!(!is_newer("0.2.0", "0.1.0"));
+        // a `continuous` CI tag must never nag the user as an "update"
+        assert!(!is_newer("0.1.0", "continuous"));
+        assert!(!is_newer("0.1.0", ""));
+    }
 }
