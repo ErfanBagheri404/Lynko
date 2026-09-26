@@ -1195,11 +1195,71 @@ fn pin() -> Option<String> {
 
 static PIN: std::sync::OnceLock<Mutex<Option<String>>> = std::sync::OnceLock::new();
 
+/// Global hotkeys. Ctrl+Shift+L shows/hides the window, Ctrl+Shift+M toggles
+/// the mirror. Registration is ALL-OR-NOTHING: if one binding is already owned
+/// by another app, every binding is rolled back and the error is returned, so
+/// the caller never believes hotkeys are on when only half of them work.
+/// Idempotent by construction — the previous registration is always dropped
+/// first (Tauri treats a duplicate registration as a hard error).
+#[tauri::command]
+fn toggle_hotkeys(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    use tauri::Emitter;
+    use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+    let gs = app.global_shortcut();
+    let binds = [
+        (Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyL), "toggle_window"),
+        (Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyM), "toggle_mirror"),
+    ];
+    for (sc, _) in &binds {
+        let _ = gs.unregister(sc.clone());
+    }
+    if !enabled {
+        return Ok(());
+    }
+    for (sc, action) in binds {
+        let handle = app.clone();
+        let result = gs.on_shortcut(sc.clone(), move |_app, _sc, event| {
+            // Fire on KEY-DOWN only — the plugin also emits a key-up for the
+            // same binding, and acting on both would double every toggle.
+            if event.state() != ShortcutState::Pressed {
+                return;
+            }
+            match action {
+                "toggle_window" => {
+                    if let Some(w) = handle.get_webview_window("main") {
+                        match w.is_visible() {
+                            Ok(true) => { let _ = w.hide(); }
+                            _ => {
+                                let _ = w.show();
+                                let _ = w.set_focus();
+                            }
+                        }
+                    }
+                }
+                "toggle_mirror" => {
+                    let _ = handle.emit("lynko-hotkey", "toggle_mirror");
+                }
+                _ => {}
+            }
+        });
+        if let Err(e) = result {
+            // Roll back whatever already registered so the state matches the
+            // error we are about to report.
+            for (sc2, _) in &binds {
+                let _ = gs.unregister(sc2.clone());
+            }
+            return Err(e.to_string());
+        }
+    }
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
             let handle = app.handle().clone();
             let paired = load_pairs(&handle);
@@ -1250,7 +1310,8 @@ fn main() {
             transfer_receive::answer_transfer,
             transfer_receive::set_transfer_pin,
             set_pc_clipboard,
-            get_pc_clipboard
+            get_pc_clipboard,
+            toggle_hotkeys
         ])
         .run(tauri::generate_context!())
         .expect("error while running Lynko");
