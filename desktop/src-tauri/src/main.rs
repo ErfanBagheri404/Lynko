@@ -503,6 +503,13 @@ async fn run_link(
 
     let (mut ws_sink, mut ws_src) = ws_stream.split();
 
+    // Announce ourselves on the wire so the phone can label the desktop in
+    // its share-sheet peer picker (it otherwise only has the socket IP).
+    {
+        let hello = hello_frame(&desktop_name());
+        let _ = ws_sink.send(Message::Text(hello.into())).await;
+    }
+
     // writer: rx channel → ws_sink
     {
         let alive_w = alive.clone();
@@ -1071,6 +1078,39 @@ fn list_devices(state: State<'_, LynkoState>) -> Vec<Device> {
     state.merged()
 }
 
+/// Reveal a received file in the OS file manager. Uses the platform's own
+/// opener so no shell plugin is needed: explorer /select on Windows,
+/// open -R on macOS, xdg-open on Linux.
+#[tauri::command]
+fn reveal_path(path: String) -> Result<(), String> {
+    let p = std::path::Path::new(&path);
+    if !p.exists() {
+        return Err("file no longer exists".into());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(format!("/select,{}", p.to_string_lossy()))
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .args(["-R", &p.to_string_lossy()])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(p.parent().unwrap_or(p))
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 fn desktop_name() -> String {
     std::env::var("COMPUTERNAME")
@@ -1254,6 +1294,12 @@ fn toggle_hotkeys(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
     Ok(())
 }
 
+/// The `hello` frame the desktop pushes on link-up so the phone can label this
+/// PC in its share-sheet picker (it otherwise only has the socket IP).
+fn hello_frame(alias: &str) -> String {
+    serde_json::json!({ "t": "hello", "d": { "alias": alias } }).to_string()
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -1284,6 +1330,7 @@ fn main() {
             protocol_info,
             list_devices,
             desktop_name,
+            reveal_path,
             pair_device,
             forget_device,
             connect,
@@ -1315,4 +1362,25 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running Lynko");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The phone parses this with JSONObject, so it must be a single valid
+    /// JSON object with t="hello" — a hand-rolled format! string with an
+    /// unescaped PC name would break the link for any name with a quote.
+    #[test]
+    fn hello_frame_is_valid_json_with_the_alias() {
+        let v: serde_json::Value = serde_json::from_str(&hello_frame("DESKTOP-ABC")).unwrap();
+        assert_eq!(v["t"], "hello");
+        assert_eq!(v["d"]["alias"], "DESKTOP-ABC");
+    }
+
+    #[test]
+    fn hello_frame_escapes_hostile_alias_names() {
+        let v: serde_json::Value = serde_json::from_str(&hello_frame(r#"My "PC"\x"#)).unwrap();
+        assert_eq!(v["d"]["alias"], r#"My "PC"\x"#);
+    }
 }
