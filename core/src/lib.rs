@@ -427,19 +427,38 @@ mod tests {
 
     #[test]
     fn set_quality_roundtrip() {
-        let q = Command::SetQuality { max_width: 720, quality: 78 };
+        let q = Command::SetQuality {
+            max_width: 720,
+            quality: 78,
+        };
         let json = serde_json::to_string(&q).unwrap();
         assert!(json.contains(r#""t":"set_quality""#));
         let back: Command = serde_json::from_str(&json).unwrap();
-        assert!(matches!(back, Command::SetQuality { max_width: 720, quality: 78 }));
+        assert!(matches!(
+            back,
+            Command::SetQuality {
+                max_width: 720,
+                quality: 78
+            }
+        ));
 
         // Each field is independently defaulted, so the desktop can send only
         // the knob that changed. `tag`+`content` still needs the `d` key
         // present (serde requires it even when every field defaults) — an
         // older phone that never saw this variant simply ignores the tag.
-        let only_dim = Command::SetQuality { max_width: 360, quality: 0 };
-        let back: Command = serde_json::from_str(&serde_json::to_string(&only_dim).unwrap()).unwrap();
-        assert!(matches!(back, Command::SetQuality { max_width: 360, quality: 0 }));
+        let only_dim = Command::SetQuality {
+            max_width: 360,
+            quality: 0,
+        };
+        let back: Command =
+            serde_json::from_str(&serde_json::to_string(&only_dim).unwrap()).unwrap();
+        assert!(matches!(
+            back,
+            Command::SetQuality {
+                max_width: 360,
+                quality: 0
+            }
+        ));
 
         // An unknown tag must fail cleanly, not panic.
         assert!(serde_json::from_str::<Command>(r#"{"t":"nope"}"#).is_err());
