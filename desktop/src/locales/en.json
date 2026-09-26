@@ -163,7 +163,14 @@
     "status_connected": "Connected",
     "stop": "Stop",
     "stop_audio": "Stop phone audio",
-    "via_usb": "USB connection"
+    "via_usb": "USB connection",
+    "notif_filter_apps": "Apps",
+    "notif_filter_hint": "Mute hides these apps' alerts and history until you unmute.",
+    "notif_mute": "Mute",
+    "notif_unmute": "Unmute",
+    "notif_snooze_1h": "Snooze 1 hour",
+    "notif_snooze_tomorrow": "Snooze until tomorrow",
+    "notif_snooze_tomorrow_short": "1d"
   },
   "settings": {
     "language": "Language",

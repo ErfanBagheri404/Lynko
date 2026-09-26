@@ -27,6 +27,16 @@ export function filterNotification(note, prefs) {
   return prefs.hidePreview ? {...note, title:'', body:''} : note;
 }
 
+/** Per-app mute/snooze gate. `muted` is a hard block list; `snoozed` maps
+ *  app → epoch-ms when the suppression lifts. Pure so it's unit-testable;
+ *  callers read the same shapes from localStorage (lynko-muted-apps,
+ *  lynko-snoozed-apps) at event time. */
+export function isAppSuppressed(app, muted, snoozed, now = Date.now()) {
+  if (Array.isArray(muted) && muted.includes(app)) return true;
+  const until = snoozed?.[app];
+  return typeof until === "number" && until > now;
+}
+
 export function mirrorHealth(link, lastFrame, now, capable) {
   if (!link.connected) return 'disconnected';
   if (capable === false) return 'unavailable';
