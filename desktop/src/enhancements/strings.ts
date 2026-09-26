@@ -9,6 +9,7 @@ const en = {
  fit:'Fit', fill:'Fill (crop)', zoom:'Zoom', top:'Always on top', stopCapture:'Stop phone capture', captureHint:'Stop ends phone capture; it does not freeze the last image. Restart may require phone consent.',
  animations:'Interface animations', motionHint:'Optional interface effects; system reduced-motion always takes priority.', forgetConfirm:'Forget this paired phone? An active link will disconnect.', confirm:'Forget phone', cancelAction:'Keep phone', disabled:'Disabled by desktop feature controls', error:'Action failed', seconds:'s ago',
  hotkeys:'Global hotkeys', hotkeysHint:'Work even when Lynko is in the background. Ctrl+Shift+L shows or hides the window, Ctrl+Shift+M toggles the mirror. Both are free — pick different ones if they clash with another app.', hotkeyConflict:'Lynko could not claim that hotkey; another app already owns it. Hotkeys stay off until it is free.',
+ updates:'Check for updates', updatesDesc:'New versions from GitHub releases', version:'Version', checkNow:'Check now', checking:'Checking…', uptodate:'You are up to date', updateAvailable:'Update available', checkFailed:'Check failed', checkOffline:'check your internet connection', autoCheck:'Check automatically on launch', whatsnew:'What is new', updated:'Lynko updated', download:'Download', later:'Later', published:'Published',
 };
 const fa: Record<keyof typeof en,string> = {
  health:'سلامت اتصال', unknown:'گزارش نشده', disconnected:'قطع اتصال', unavailable:'گوشی پشتیبانی نمی‌کند', idle:'ضبط متوقف است', waiting:'هنوز فریمی نرسیده', stalled:'بیش از ۵ ثانیه بدون فریم', live:'در حال دریافت فریم',
@@ -20,6 +21,7 @@ const fa: Record<keyof typeof en,string> = {
  fit:'جا دادن', fill:'پر کردن (برش)', zoom:'بزرگ‌نمایی', top:'همیشه روی پنجره‌ها', stopCapture:'توقف ضبط گوشی', captureHint:'توقف، ضبط گوشی را پایان می‌دهد؛ تصویر آخر را ثابت نمی‌کند. شروع دوباره ممکن است نیازمند رضایت گوشی باشد.',
  animations:'پویانمایی رابط', motionHint:'جلوه‌های اختیاری رابط؛ تنظیم کاهش حرکت سیستم همیشه اولویت دارد.', forgetConfirm:'این گوشی فراموش شود؟ اتصال فعال قطع خواهد شد.', confirm:'فراموش کردن گوشی', cancelAction:'نگه داشتن گوشی', disabled:'در کنترل قابلیت‌های دسکتاپ غیرفعال است', error:'عملیات ناموفق', seconds:'ثانیه پیش',
  hotkeys:'کلیدهای سراسری', hotkeysHint:'حتی وقتی لینکو در پس‌زمینه است کار میکند. Ctrl+Shift+L پنجره را نشان یا پنهان میکند و Ctrl+Shift+M آینه را روشن/خاموش میکند.', hotkeyConflict:'Lynko نتوانست آن کلید را بگیرد؛ برنامه دیگری زودتر آن را دارد.',
+ updates:'بررسی به‌روزرسانی', updatesDesc:'نسخه‌های جدید از انتشارهای گیت‌هاب', version:'نسخه', checkNow:'بررسی کن', checking:'در حال بررسی…', uptodate:'به‌روز هستید', updateAvailable:'نسخه جدید موجود است', checkFailed:'بررسی ناموفق بود', checkOffline:'اتصال اینترنت را بررسی کنید', autoCheck:'بررسی خودکار هنگام اجرا', whatsnew:'تازه‌ها', updated:'Lynko به‌روز شد', download:'دانلود', later:'بعداً', published:'انتشار',
 };
 export type EnhancementKey = keyof typeof en;
 export const text = (lang:Lang, key:EnhancementKey) => (lang === 'fa' ? fa : en)[key];
