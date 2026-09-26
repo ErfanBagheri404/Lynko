@@ -98,11 +98,12 @@ async def test_link_session():
             {"t": "copy", "d": {"text": "clipboard e2e"}},
             {"t": "paste"},
             {"t": "status_get"},
+            {"t": "set_quality", "d": {"max_width": 720, "quality": 78}},
         ]
         for c in cmds:
             await ws.send(json.dumps(c))
             await asyncio.sleep(0.05)
-        check("ws: 12 input commands sent", True)
+        check("ws: 13 input commands sent", True)
 
         # wait for replies (status_get → battery, paste → clipboard_reply, logs)
         reply_types = set()

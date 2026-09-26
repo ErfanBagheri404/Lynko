@@ -57,13 +57,19 @@ class ScreenSession(
     // (211 drops/25s in production logs). 540p halves the per-frame bytes
     // while still looking sharp on the mirrored window. Touch coords stay
     // normalized — same mapping as 720p.
-    private val scaleToDisplay = (540f / realSize.x).coerceAtMost(1f)
-    private val width = (realSize.x * scaleToDisplay).toInt().coerceAtLeast(360)
-    private val height = (realSize.y * scaleToDisplay).toInt().coerceAtLeast(720)
-    private val density = (metrics.densityDpi * scaleToDisplay).toInt().coerceAtLeast(120)
+    private var scaleToDisplay = (540f / realSize.x).coerceAtMost(1f)
+    private var width = (realSize.x * scaleToDisplay).toInt().coerceAtLeast(360)
+    private var height = (realSize.y * scaleToDisplay).toInt().coerceAtLeast(720)
+    private var density = (metrics.densityDpi * scaleToDisplay).toInt().coerceAtLeast(120)
     private var lastFrameAt = 0L
     private var jpegQuality = 65
     private var drops = 0
+
+    /** Capture-width target the desktop asked for (0 = keep the 540p default). */
+    @Volatile private var requestedMaxWidth = 0
+    /** JPEG quality ceiling the desktop asked for (0 = keep 65). The
+     *  adaptive backoff may still step below it under link pressure. */
+    @Volatile private var requestedQuality = 0
 
     /** Adaptive frame pacing. 33ms = 30fps target on a healthy LAN; the
      *  old fixed 66ms cap made every mirror 15fps by construction. On any
@@ -74,9 +80,10 @@ class ScreenSession(
     private var cleanFrames = 0
     private var lastAdaptAt = 0L
 
-    // Reused per frame — zero steady-state allocation, no GC churn.
-    private val rawBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-    private val row = ByteArray(width * 4)
+    // Reused per frame — zero steady-state allocation, no GC churn. Sized
+    // from the CURRENT width, so a quality change rebuilds them.
+    private var rawBitmap: Bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    private var row: ByteArray = ByteArray(width * 4)
     private val baos = ByteArrayOutputStream(256 * 1024)
 
     /** Backpressure feedback from LinkService: when frames are being dropped
@@ -91,6 +98,12 @@ class ScreenSession(
         if (drops % 3 == 0 && jpegQuality > 40) jpegQuality -= 10
     }
 
+    /** JPEG quality ceiling: the desktop's preset wins, otherwise the
+     *  tuned 65 default. The adaptive backoff may dip BELOW this under link
+     *  pressure but must never recover ABOVE it — otherwise an eco preset
+     *  would silently drift back up to 65. */
+    private fun qualityCeiling() = if (requestedQuality > 0) requestedQuality else 65
+
     /** Called after a frame goes through cleanly — recovers pacing toward
      *  30fps one step per clean second (no thrash: one step per second max,
      *  decided by wall clock, not per frame). */
@@ -99,7 +112,9 @@ class ScreenSession(
         if (now - lastAdaptAt >= 1000L) {
             lastAdaptAt = now
             if (frameIntervalMs > 33L) frameIntervalMs -= 6L
-            if (jpegQuality < 65) jpegQuality += 5
+            if (jpegQuality < qualityCeiling()) {
+                jpegQuality = (jpegQuality + 5).coerceAtMost(qualityCeiling())
+            }
         }
         cleanFrames++
     }
@@ -120,7 +135,41 @@ class ScreenSession(
         }
     }
 
+    companion object {
+        @Volatile private var active: ScreenSession? = null
+
+        /** Re-tune the live capture. A no-op when the mirror is not running,
+         *  so a preset clicked in Settings before starting costs nothing.
+         *  Runs on the WS thread; the pipeline is only torn down and rebuilt
+         *  on the frame handler thread. The MediaProjection token is never
+         *  released, so no fresh consent is needed. */
+        fun applyQuality(maxWidth: Int, quality: Int) {
+            active?.applyQualityLive(maxWidth, quality)
+        }
+    }
+
+    private fun applyQualityLive(maxWidth: Int, quality: Int) {
+        if (maxWidth <= 0 && quality <= 0) return
+        if (maxWidth > 0) requestedMaxWidth = maxWidth.coerceIn(360, 2160)
+        if (quality > 0) requestedQuality = quality.coerceIn(30, 100)
+        handler?.post { safeBuild("quality") }
+    }
+
+    /** Resolve the effective capture size: the desktop's capture width wins,
+     *  otherwise the tuned 540p default. */
+    private fun applyRequested() {
+        val target = if (requestedMaxWidth > 0) requestedMaxWidth else 540
+        scaleToDisplay = (target / realSize.x.toFloat()).coerceAtMost(1f)
+        width = (realSize.x * scaleToDisplay).toInt().coerceAtLeast(360)
+        height = (realSize.y * scaleToDisplay).toInt().coerceAtLeast(720)
+        density = (metrics.densityDpi * scaleToDisplay).toInt().coerceAtLeast(120)
+        if (requestedQuality > 0) jpegQuality = requestedQuality
+        rawBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        row = ByteArray(width * 4)
+    }
+
     fun start() {
+        active = this
         // ImageReader callbacks need a looper — the WS thread has none, so
         // give the reader its own background handler thread.
         thread = HandlerThread("lynko-frames").also { it.start() }
@@ -158,6 +207,7 @@ class ScreenSession(
         reader?.close()
         reader = null
         lastFrameAt = 0L
+        applyRequested()
 
         val r = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 4)
         reader = r
@@ -215,6 +265,7 @@ class ScreenSession(
 
     fun stop() {
         running = false
+        if (active === this) active = null
         try { context.unregisterReceiver(screenReceiver) } catch (_: Exception) {}
         val h = handler
         if (h != null) {
