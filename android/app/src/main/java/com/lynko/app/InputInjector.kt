@@ -8,6 +8,7 @@ import android.graphics.Path
 import android.os.Build
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
 
 /**
  * AccessibilityService for desktop-injected taps and swipes.
@@ -352,18 +353,126 @@ object InputInjector {
 
     /** Navigation keys that need a global action, not a gesture. */
     fun navKey(name: String): Boolean {
+        // Editing/focus keys resolve against the focused field FIRST — a Tab
+        // in a URL bar must move focus, arrows must move the caret, and none
+        // of them are global accessibility actions. Names arrive normalized
+        // from the desktop key map (enhancements/keyboard.mjs), so they are
+        // the SNAKE_CASE Android keycode names, never DOM names like "Escape".
+        when (name) {
+            "TAB" -> return focusNext()
+            "MOVE_HOME" -> return moveCaretTo(false)
+            "MOVE_END" -> return moveCaretTo(true)
+            "DPAD_UP", "DPAD_DOWN", "DPAD_LEFT", "DPAD_RIGHT" -> return moveCaret(name)
+            "PAGE_UP", "PAGE_DOWN" -> return scrollPage(name == "PAGE_UP")
+            "SPACE" -> return true // SPACE arrives as printable text, handled by typeText
+            "DEL", "BACKSPACE" -> return backspace()
+            // HOME is deliberately NOT here: on Android HOME is the launcher
+            // (the rail's Home button sends it), so it stays a global action.
+        }
         val svc = LynkoAccessibilityService.instance ?: run {
             Log.w("lynko", "nav key ignored — accessibility service not enabled")
             return false
         }
         val action = when (name) {
-            "BACK" -> AccessibilityService.GLOBAL_ACTION_BACK
-            "HOME" -> AccessibilityService.GLOBAL_ACTION_HOME
-            "RECENTS" -> AccessibilityService.GLOBAL_ACTION_RECENTS
-            "NOTIFICATIONS" -> AccessibilityService.GLOBAL_ACTION_NOTIFICATIONS
+            "BACK" -> android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK
+            "HOME" -> android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME
+            "RECENTS" -> android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_RECENTS
+            "NOTIFICATIONS" -> android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_NOTIFICATIONS
             else -> return false
         }
         return svc.performGlobalAction(action)
+    }
+
+    /** Desktop Tab: move input focus to the next focusable node in document
+     *  order. Accessibility has no "next focusable" primitive, so collect the
+     *  focusable nodes, find the focused one, and ACTION_FOCUS its successor
+     *  (wrapping at the end). */
+    private fun focusNext(): Boolean {
+        val svc = LynkoAccessibilityService.instance ?: return false
+        val root = svc.rootInActiveWindow ?: return false
+        val current = root.findFocus(AccessibilityNodeInfo.FOCUS_ACCESSIBILITY)
+        val found = mutableListOf<android.view.accessibility.AccessibilityNodeInfo>()
+        collectFocusable(root, found)
+        var ok = false
+        if (found.isNotEmpty()) {
+            val idx = current?.let { cur -> found.indexOfFirst { node -> node == cur } } ?: -1
+            val next = found.getOrNull(idx + 1) ?: found.first()
+            ok = next.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+        }
+        found.forEach { it.recycle() }
+        current?.recycle()
+        root.recycle()
+        return ok
+    }
+
+    private fun collectFocusable(
+        node: android.view.accessibility.AccessibilityNodeInfo,
+        out: MutableList<android.view.accessibility.AccessibilityNodeInfo>
+    ) {
+        if (node.isFocusable && node.isVisibleToUser) out.add(node)
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            collectFocusable(child, out)
+        }
+    }
+
+    /** Move the caret inside the focused editable. The only cursor primitive
+     *  accessibility exposes is granular movement, so horizontal/vertical
+     *  moves are best-effort and return false when the node refuses them —
+     *  the desktop toasts instead of silently doing nothing. */
+    private fun moveCaret(dir: String): Boolean {
+        val node = focusedEditable() ?: return false
+        val (action, granularity) = when (dir) {
+            "DPAD_LEFT" -> Pair(AccessibilityNodeInfo.ACTION_PREVIOUS_AT_MOVEMENT_GRANULARITY, AccessibilityNodeInfo.MOVEMENT_GRANULARITY_CHARACTER)
+            "DPAD_RIGHT" -> Pair(AccessibilityNodeInfo.ACTION_NEXT_AT_MOVEMENT_GRANULARITY, AccessibilityNodeInfo.MOVEMENT_GRANULARITY_CHARACTER)
+            "DPAD_UP" -> Pair(AccessibilityNodeInfo.ACTION_PREVIOUS_AT_MOVEMENT_GRANULARITY, AccessibilityNodeInfo.MOVEMENT_GRANULARITY_LINE)
+            else -> Pair(AccessibilityNodeInfo.ACTION_NEXT_AT_MOVEMENT_GRANULARITY, AccessibilityNodeInfo.MOVEMENT_GRANULARITY_LINE)
+        }
+        val args = android.os.Bundle().apply {
+            putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_MOVEMENT_GRANULARITY_INT, granularity)
+            putBoolean(AccessibilityNodeInfo.ACTION_ARGUMENT_EXTEND_SELECTION_BOOLEAN, false)
+        }
+        val ok = node.performAction(action, args)
+        node.recycle()
+        return ok
+    }
+
+    /** Home/End in the focused field. AccessibilityNodeInfo has no
+     *  MOVE_HOME/MOVE_END action — a collapsed SET_SELECTION range is the
+     *  one cursor-placement primitive it offers. */
+    private fun moveCaretTo(end: Boolean): Boolean {
+        val node = focusedEditable() ?: return false
+        val len = node.text?.length ?: 0
+        val args = android.os.Bundle().apply {
+            putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, if (end) len else 0)
+            putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, if (end) len else 0)
+        }
+        val ok = node.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, args)
+        node.recycle()
+        return ok
+    }
+
+    /** Page Up/Down: scroll the nearest scrollable container. */
+    private fun scrollPage(backward: Boolean): Boolean {
+        val svc = LynkoAccessibilityService.instance ?: return false
+        val root = svc.rootInActiveWindow ?: return false
+        val target = findScrollable(root) ?: root
+        val action = if (backward) AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
+            else AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+        val ok = target.performAction(action)
+        root.recycle()
+        return ok
+    }
+
+    private fun findScrollable(
+        node: android.view.accessibility.AccessibilityNodeInfo
+    ): android.view.accessibility.AccessibilityNodeInfo? {
+        if (node.isScrollable && node.isVisibleToUser) return node
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            findScrollable(child)?.let { return it }
+        }
+        return null
     }
 
     /** Type `text` into whatever field is currently focused — no Lynko IME.

@@ -7,7 +7,8 @@ import {
 } from "./icons";
 import QRCode from "qrcode";
 import {IncomingShare} from "./enhancements/IncomingShare";
-import {usePreferences, readPreferences, useTransfers, type Preferences, type TransferItem} from './enhancements/hooks';
+import {usePreferences, readPreferences, useTransfers, useHotkeys, type Preferences, type TransferItem} from './enhancements/hooks';
+import {mapKey} from './enhancements/keyboard.mjs';
 import {filterNotification} from './enhancements/logic.mjs';
 import {HealthPanel, FeatureControls, PrivacyControls} from './enhancements/Panels';
 import {text as extra} from './enhancements/strings';
@@ -153,6 +154,17 @@ export default function App() {
   const [battery, setBattery] = useState<BatteryState | null>(null);
   const [clipItems, setClipItems] = useState<ClipItem[]>([]);
   const {prefs, updatePrefs} = usePreferences();
+  const prefsLangRef = useRef(lang);
+  prefsLangRef.current = lang;
+  // Global hotkeys live in Rust (OS-level, so they work backgrounded). The
+  // pref flip is the only trigger; a rejection means another app already owns
+  // the combo — roll the toggle back and say so rather than showing "on"
+  // for a binding that does not exist.
+  const onHotkeyConflict = useCallback((reason: string) => {
+    toast(`${extra(prefsLangRef.current, "hotkeyConflict")} (${reason})`, "err");
+    updatePrefs({ hotkeys: false });
+  }, [updatePrefs]);
+  useHotkeys(api, prefs.hotkeys, onHotkeyConflict);
   const {files, queueFile: enqueueFile, cancelFile, retryFile} = useTransfers(api,link.connected,link.device_id,prefs.files);
   const [lastFrame, setLastFrame] = useState<number|null>(null);
   const lastFrameRef = useRef<number|null>(null);
@@ -294,6 +306,13 @@ export default function App() {
     // startup — the toggle must survive restarts without the user visiting
     // the Settings view (that component unmounts on navigation).
     void api.invoke("set_auto_reconnect", { on: localStorage.getItem("lynko-autoreconnect") !== "0" }).catch(() => {});
+
+    // OS-level hotkey fired. The window toggle is handled in Rust (it owns the
+    // window); mirror toggling needs the live `streaming` flag, which only
+    // ScreenView has — re-dispatch as a DOM event it subscribes to.
+    api.on<string>("lynko-hotkey", (e) => {
+      if (e.payload === "toggle_mirror") window.dispatchEvent(new Event("lynko-toggle-mirror"));
+    }).then((u) => unsubs.push(u));
 
     api.on<Device[]>("discovery", (e) => setDevices(e.payload)).then((u) => unsubs.push(u));
 
@@ -886,6 +905,19 @@ function ScreenView(props: ShellProps) {
     } catch (e) { toast(`Stop failed: ${e}`, "err"); }
   };
 
+  // Ctrl+Shift+M from anywhere in the OS. Toggle direction comes from
+  // `streaming` (mirroring on → stop, otherwise start), and the screen
+  // feature toggle still wins — a hotkey must not bypass what the user
+  // switched off in Settings.
+  useEffect(() => {
+    const flip = () => {
+      if (!props.prefs.screen) { void start(); return; }
+      if (streaming) void stop(); else void start();
+    };
+    window.addEventListener("lynko-toggle-mirror", flip);
+    return () => window.removeEventListener("lynko-toggle-mirror", flip);
+  }, [streaming, props.prefs.screen, start, stop]);
+
   const norm = (ev: React.PointerEvent) => {
     // Map onto the PAINTED image, not the <img> element box: with
     // object-fit:contain the element box is the whole canvas and the bitmap
@@ -933,11 +965,22 @@ function ScreenView(props: ShellProps) {
       } catch {}
       return;
     }
-    if (ev.key.length === 1) {
-      try { await api.invoke("inject_text", { text: ev.key }); } catch {}
-    } else if (["Enter", "Backspace", "Escape", "Tab", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home"].includes(ev.key)) {
+    // Everything else goes through the shared, tested key map — so a modifier
+    // combo is never forwarded as "type the bare character", and unknown keys
+    // are dropped rather than sent to the phone as a name it will reject.
+    const act = mapKey({
+      key: ev.key,
+      ctrlKey: ev.ctrlKey,
+      metaKey: ev.metaKey,
+      altKey: ev.altKey,
+      shiftKey: ev.shiftKey,
+    });
+    if (act.kind === "drop") return;
+    if (act.kind === "text") {
+      try { await api.invoke("inject_text", { text: act.text }); } catch {}
+    } else {
       ev.preventDefault();
-      try { await api.invoke("inject_key", { key: ev.key }); } catch {}
+      try { await api.invoke("inject_key", { key: act.key }); } catch {}
     }
   };
 
@@ -1196,6 +1239,7 @@ function SettingsView(props: ShellProps) {
       <PageHead title={T("settings_title")} sub={T("settings_sub")} />
       <FeatureControls lang={lang} prefs={props.prefs} updatePrefs={props.updatePrefs}/>
       <SetRow title={extra(lang,'animations')} desc={extra(lang,'motionHint')} on={props.prefs.animations} onToggle={()=>props.updatePrefs({animations:!props.prefs.animations})}/>
+      <SetRow title={extra(lang,'hotkeys')} desc={extra(lang,'hotkeysHint')} on={props.prefs.hotkeys} onToggle={()=>props.updatePrefs({hotkeys:!props.prefs.hotkeys})}/>
       <div className="card">
         <div className="set-row">
           <div className="what"><strong>{T("language")}</strong></div>

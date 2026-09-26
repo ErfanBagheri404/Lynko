@@ -8,6 +8,7 @@ const en = {
  queued:'Queued', sending:'Sending / awaiting phone', sent:'Sent', failed:'Failed', cancelled:'Cancelled', retry:'Retry', cancel:'Cancel queued', queueHint:'One file at a time. Retry asks the phone again. Active uploads cannot be cancelled here; queued files can. Progress measures bytes read, not phone acknowledgement.', queuePaused:'Queue waits for the original phone and file sending to be enabled.',
  fit:'Fit', fill:'Fill (crop)', zoom:'Zoom', top:'Always on top', stopCapture:'Stop phone capture', captureHint:'Stop ends phone capture; it does not freeze the last image. Restart may require phone consent.',
  animations:'Interface animations', motionHint:'Optional interface effects; system reduced-motion always takes priority.', forgetConfirm:'Forget this paired phone? An active link will disconnect.', confirm:'Forget phone', cancelAction:'Keep phone', disabled:'Disabled by desktop feature controls', error:'Action failed', seconds:'s ago',
+ hotkeys:'Global hotkeys', hotkeysHint:'Work even when Lynko is in the background. Ctrl+Shift+L shows or hides the window, Ctrl+Shift+M toggles the mirror. Both are free — pick different ones if they clash with another app.', hotkeyConflict:'Lynko could not claim that hotkey; another app already owns it. Hotkeys stay off until it is free.',
 };
 const fa: Record<keyof typeof en,string> = {
  health:'سلامت اتصال', unknown:'گزارش نشده', disconnected:'قطع اتصال', unavailable:'گوشی پشتیبانی نمی‌کند', idle:'ضبط متوقف است', waiting:'هنوز فریمی نرسیده', stalled:'بیش از ۵ ثانیه بدون فریم', live:'در حال دریافت فریم',
@@ -18,6 +19,7 @@ const fa: Record<keyof typeof en,string> = {
  queued:'در صف', sending:'ارسال / انتظار تأیید گوشی', sent:'ارسال شد', failed:'ناموفق', cancelled:'لغو شد', retry:'تلاش دوباره', cancel:'لغو از صف', queueHint:'هر بار یک فایل. تلاش دوباره نیازمند تأیید مجدد گوشی است. لغو ارسال فعال در اینجا ممکن نیست؛ فایل صف را می‌توانید لغو کنید. پیشرفت یعنی بایت خوانده‌شده، نه تأیید گوشی.', queuePaused:'صف منتظر همان گوشی و فعال شدن ارسال فایل می‌ماند.',
  fit:'جا دادن', fill:'پر کردن (برش)', zoom:'بزرگ‌نمایی', top:'همیشه روی پنجره‌ها', stopCapture:'توقف ضبط گوشی', captureHint:'توقف، ضبط گوشی را پایان می‌دهد؛ تصویر آخر را ثابت نمی‌کند. شروع دوباره ممکن است نیازمند رضایت گوشی باشد.',
  animations:'پویانمایی رابط', motionHint:'جلوه‌های اختیاری رابط؛ تنظیم کاهش حرکت سیستم همیشه اولویت دارد.', forgetConfirm:'این گوشی فراموش شود؟ اتصال فعال قطع خواهد شد.', confirm:'فراموش کردن گوشی', cancelAction:'نگه داشتن گوشی', disabled:'در کنترل قابلیت‌های دسکتاپ غیرفعال است', error:'عملیات ناموفق', seconds:'ثانیه پیش',
+ hotkeys:'کلیدهای سراسری', hotkeysHint:'حتی وقتی لینکو در پس‌زمینه است کار میکند. Ctrl+Shift+L پنجره را نشان یا پنهان میکند و Ctrl+Shift+M آینه را روشن/خاموش میکند.', hotkeyConflict:'Lynko نتوانست آن کلید را بگیرد؛ برنامه دیگری زودتر آن را دارد.',
 };
 export type EnhancementKey = keyof typeof en;
 export const text = (lang:Lang, key:EnhancementKey) => (lang === 'fa' ? fa : en)[key];
