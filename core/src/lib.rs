@@ -188,6 +188,15 @@ pub enum Command {
         notif_id: i32,
         text: String,
     },
+    /// Re-tune the phone's capture: cap the long edge and JPEG quality.
+    /// 0 means "leave this knob alone", so the desktop can send only what
+    /// changed. The phone applies it live, without dropping the projection.
+    SetQuality {
+        #[serde(default)]
+        max_width: u32,
+        #[serde(default)]
+        quality: u32,
+    },
 }
 
 /// Events phone → desktop over the control link (JSON text frames).
@@ -414,5 +423,25 @@ mod tests {
         };
         let json = serde_json::to_string(&t).unwrap();
         assert!(serde_json::from_str::<Command>(&json).is_ok());
+    }
+
+    #[test]
+    fn set_quality_roundtrip() {
+        let q = Command::SetQuality { max_width: 720, quality: 78 };
+        let json = serde_json::to_string(&q).unwrap();
+        assert!(json.contains(r#""t":"set_quality""#));
+        let back: Command = serde_json::from_str(&json).unwrap();
+        assert!(matches!(back, Command::SetQuality { max_width: 720, quality: 78 }));
+
+        // Each field is independently defaulted, so the desktop can send only
+        // the knob that changed. `tag`+`content` still needs the `d` key
+        // present (serde requires it even when every field defaults) — an
+        // older phone that never saw this variant simply ignores the tag.
+        let only_dim = Command::SetQuality { max_width: 360, quality: 0 };
+        let back: Command = serde_json::from_str(&serde_json::to_string(&only_dim).unwrap()).unwrap();
+        assert!(matches!(back, Command::SetQuality { max_width: 360, quality: 0 }));
+
+        // An unknown tag must fail cleanly, not panic.
+        assert!(serde_json::from_str::<Command>(r#"{"t":"nope"}"#).is_err());
     }
 }

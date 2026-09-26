@@ -764,6 +764,12 @@ fn send_signal(state: State<'_, LynkoState>, payload: serde_json::Value) -> Resu
     send_cmd(&state, &Command::Signal { payload })
 }
 
+/// Re-tune the phone's capture live (long-edge pixel cap + JPEG quality).
+#[tauri::command]
+fn set_quality(state: State<'_, LynkoState>, max_width: u32, quality: u32) -> Result<(), String> {
+    send_cmd(&state, &Command::SetQuality { max_width, quality })
+}
+
 #[tauri::command]
 fn send_file(state: State<'_, LynkoState>, path: String, request_id: Option<String>) -> Result<String, String> {
     send_files_v2(state, vec![path], request_id)
@@ -1245,6 +1251,7 @@ fn main() {
             inject_key,
             inject_text,
             send_signal,
+            set_quality,
             send_file,
             send_files_v2,
             transfer_receive::answer_transfer,
