@@ -31,6 +31,7 @@ object VpnGuard {
 
     private var cm: ConnectivityManager? = null
     private var callback: NetworkCallback? = null
+    private var vpnCallback: NetworkCallback? = null
     private var bound: Network? = null
     private var onRebind: ((Network) -> Unit)? = null
     private var attached = false
@@ -84,11 +85,54 @@ object VpnGuard {
         } catch (e: Exception) {
             Log.w(TAG, "registerNetworkCallback failed: ${e.message}")
         }
+
+        // 3. VPN toggles usually do NOT change the Wi-Fi network's own
+        //    capabilities — a NEW vpn0 network appears instead, and our
+        //    Wi-Fi-only watcher sleeps through it while Android reroutes the
+        //    process to the tunnel. Watch TRANSPORT_VPN explicitly: whenever a
+        //    VPN network comes or goes, re-pin to Wi-Fi and rebuild sockets.
+        val vpnRequest = NetworkRequest.Builder()
+            .addTransportType(NetworkCapabilities.TRANSPORT_VPN)
+            .build()
+        vpnCallback = object : NetworkCallback() {
+            override fun onAvailable(network: Network) { repin("vpn-up") }
+            override fun onLost(network: Network) { repin("vpn-down") }
+        }
+        try {
+            cm.registerNetworkCallback(vpnRequest, vpnCallback!!)
+            Log.i(TAG, "vpn-guard armed on VPN transport")
+        } catch (e: Exception) {
+            Log.w(TAG, "vpn watcher failed: ${e.message}")
+        }
+    }
+
+    /** Re-pin the process to the current physical Wi-Fi and rebuild servers. */
+    private fun repin(why: String) {
+        val cm = cm ?: return
+        val wifi = cm.allNetworks.firstOrNull { net ->
+            val caps = cm.getNetworkCapabilities(net)
+            caps != null &&
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) &&
+                !caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+        } ?: run {
+            Log.w(TAG, "$why: no physical Wi-Fi to re-pin to")
+            return
+        }
+        Log.i(TAG, "$why: re-pinning to Wi-Fi")
+        try {
+            cm.bindProcessToNetwork(wifi)
+            bound = wifi
+            onRebind?.invoke(wifi)
+        } catch (e: Exception) {
+            Log.w(TAG, "$why re-pin failed: ${e.message}")
+        }
     }
 
     fun detach() {
         callback?.let { try { cm?.unregisterNetworkCallback(it) } catch (_: Exception) {} }
         callback = null
+        vpnCallback?.let { try { cm?.unregisterNetworkCallback(it) } catch (_: Exception) {} }
+        vpnCallback = null
         bound = null
         cm = null
         onRebind = null
@@ -97,7 +141,19 @@ object VpnGuard {
 
     private fun bind(network: Network, why: String) {
         val changed = bound != null && bound != network
-        if (bound == network) return
+        if (bound == network) {
+            // Force the rebind anyway: when the user toggles the VPN mid-mirror
+            // Android silently re-routes the process to the tunnel even though
+            // the "bound" handle is unchanged — without this the WS to the PC
+            // dies (mirror freezes) and auto-reconnects from the VPN address.
+            try {
+                cm?.bindProcessToNetwork(network)
+                Log.i(TAG, "process re-bound to physical Wi-Fi ($why, same handle)")
+            } catch (e: Exception) {
+                Log.w(TAG, "bindProcessToNetwork($why) failed: ${e.message}")
+            }
+            return
+        }
         bound = network
         try {
             cm?.bindProcessToNetwork(network)

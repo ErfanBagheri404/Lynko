@@ -152,17 +152,27 @@ pub enum Command {
     },
     /// Live-drag segments (stroke continuation): first segment starts the
     /// pointer down, `false` segments continue it, the last `true` one lifts.
+    /// `dt` = real pointer-sample gaps in ms, measured on the DESKTOP — the
+    /// phone sizes each segment from these, never from network arrival
+    /// timing (arrivals batch and burst; arrival gaps lie about velocity).
+    /// Missing dt (older desktop) → phone falls back to arrival timing.
     DragStart {
         x: f32,
         y: f32,
+        #[serde(default)]
+        dt: u32,
     },
     DragMove {
         x: f32,
         y: f32,
+        #[serde(default)]
+        dt: u32,
     },
     DragEnd {
         x: f32,
         y: f32,
+        #[serde(default)]
+        dt: u32,
     },
     /// Inject a key press (android keycode name or UI key, e.g. "Enter").
     Key {
@@ -196,8 +206,24 @@ pub enum Event {
         title: String,
         body: String,
         /// Android notification id — needed to reply to this notification.
-        #[serde(default)]
+        /// `alias` keeps phones that emit the legacy camelCase `notifId`
+        /// readable; without it `default` silently yields 0 and every reply
+        /// targets a non-existent notification.
+        #[serde(default, alias = "notifId")]
         notif_id: i32,
+    },
+    /// Authoritative phone-side state, pushed on every change. The desktop
+    /// renders from THIS, never from guesswork about its own socket.
+    PhoneState {
+        link: bool,
+        mirror: bool,
+        locked: bool,
+        /// Accessibility service is bound — gestures can actually be injected.
+        /// False means "mirror is live but taps/swipes are dead": the desktop
+        /// must say so instead of swallowing input commands.
+        /// `default` keeps older phones (which don't send it) parseable.
+        #[serde(default)]
+        control: bool,
     },
     /// Reply to `Command::Paste`.
     ClipboardReply {

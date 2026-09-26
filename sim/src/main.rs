@@ -119,6 +119,7 @@ fn run_pair_server(link_port: Arc<AtomicU64>) {
                                     device_name: "Pixel Sim (Lynko)".into(),
                                     capabilities: sim_caps(),
                                     link_port: link_port.load(Ordering::Relaxed) as u16,
+                                    transfer_port: 7914,
                                 }
                             } else {
                                 println!("sim: pair REJECTED (bad pin or version)");
@@ -128,6 +129,7 @@ fn run_pair_server(link_port: Arc<AtomicU64>) {
                                     device_name: "Pixel Sim (Lynko)".into(),
                                     capabilities: sim_caps(),
                                     link_port: link_port.load(Ordering::Relaxed) as u16,
+                                    transfer_port: 7914,
                                 }
                             }
                         }
@@ -137,6 +139,7 @@ fn run_pair_server(link_port: Arc<AtomicU64>) {
                             device_name: "Pixel Sim (Lynko)".into(),
                             capabilities: sim_caps(),
                             link_port: link_port.load(Ordering::Relaxed) as u16,
+                            transfer_port: 7914,
                         },
                     };
                     let payload = serde_json::to_vec(&resp).unwrap();
@@ -233,6 +236,7 @@ async fn handle_link(stream: tokio::net::TcpStream) {
                             app: apps[i].into(),
                             title: titles[i].into(),
                             body: bodies[i].into(),
+                            notif_id: 0,
                         })
                         .unwrap(),
                     ))
@@ -345,6 +349,26 @@ async fn handle_command(
         Command::Signal { payload } => {
             println!("sim: SIGNAL {:?}", payload);
             None
+        }
+        Command::FileEnd { id } => {
+            println!("sim: file end id={id}");
+            Some(Event::Log { msg: format!("received file id={id}") })
+        }
+        Command::DragStart { x, y, .. } => {
+            println!("sim: DRAGSTART ({x:.3},{y:.3})");
+            Some(Event::Log { msg: format!("drag start ({x:.2}, {y:.2})") })
+        }
+        Command::DragMove { x, y, .. } => {
+            println!("sim: DRAGMOVE ({x:.3},{y:.3})");
+            None
+        }
+        Command::DragEnd { x, y, .. } => {
+            println!("sim: DRAGEND ({x:.3},{y:.3})");
+            Some(Event::Log { msg: format!("drag end ({x:.2}, {y:.2})") })
+        }
+        Command::NotifReply { app, notif_id, text } => {
+            println!("sim: NOTIFREPLY {app}#{notif_id} {:?}", text);
+            Some(Event::Log { msg: format!("notif reply {app}") })
         }
     }
     // encode_chunk is exercised by the desktop sender; sim just decodes.

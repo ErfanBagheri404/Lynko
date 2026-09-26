@@ -21,10 +21,13 @@ object TransferConsent {
             val sizeKb = session.files.sumOf { it.size } / 1024
             val sizeLabel = if (sizeKb > 1024) "${sizeKb / 1024} MB" else "$sizeKb KB"
             AlertDialog.Builder(ctx)
-                .setTitle("Incoming files")
-                .setMessage("${session.senderAlias} wants to send ${session.files.size} file(s) ($sizeLabel)")
-                .setPositiveButton("Accept") { _, _ -> answer(true) }
-    .setNegativeButton("Decline") { _, _ -> answer(false) }
+                .setTitle(Loc.t("phone", "transfer_title"))
+                .setMessage(Loc.t("phone", "transfer_body")
+                    .replace("{from}", session.senderAlias)
+                    .replace("{n}", session.files.size.toString())
+                    .replace("{size}", sizeLabel))
+                .setPositiveButton(Loc.t("phone", "accept")) { _, _ -> answer(true) }
+    .setNegativeButton(Loc.t("phone", "decline")) { _, _ -> answer(false) }
                 .setOnCancelListener { answer(false) }
                 .show()
         }
