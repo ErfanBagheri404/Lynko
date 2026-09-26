@@ -601,6 +601,13 @@ class LinkService : Service() {
                 .put("pct", BatteryLevel.read(applicationContext))
                 .put("charging", BatteryLevel.isCharging(applicationContext)))
             "start_screen" -> startScreenCapture(conn)
+            "set_quality" -> {
+                val o = d as? JSONObject
+                val maxWidth = o?.optInt("max_width", 0) ?: 0
+                val quality = o?.optInt("quality", 0) ?: 0
+                ScreenSession.applyQuality(maxWidth, quality)
+                sendEvent(conn, "log", JSONObject().put("msg", "quality applied"))
+            }
             "stop_screen" -> {
                 stopLocalMirror()
                 sendEvent(conn, "log", JSONObject().put("msg", "screen stopped"))

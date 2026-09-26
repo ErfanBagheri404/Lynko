@@ -366,6 +366,10 @@ async fn handle_command(
             println!("sim: DRAGEND ({x:.3},{y:.3})");
             Some(Event::Log { msg: format!("drag end ({x:.2}, {y:.2})") })
         }
+        Command::SetQuality { max_width, quality } => {
+            println!("sim: SETQUALITY max_width={max_width} quality={quality}");
+            Some(Event::Log { msg: format!("quality set ({}p, q{quality})", max_width) })
+        }
         Command::NotifReply { app, notif_id, text } => {
             println!("sim: NOTIFREPLY {app}#{notif_id} {:?}", text);
             Some(Event::Log { msg: format!("notif reply {app}") })

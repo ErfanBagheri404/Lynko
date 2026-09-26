@@ -10,6 +10,7 @@ import {IncomingShare} from "./enhancements/IncomingShare";
 import {usePreferences, readPreferences, useTransfers, type Preferences, type TransferItem} from './enhancements/hooks';
 import {filterNotification} from './enhancements/logic.mjs';
 import {HealthPanel, FeatureControls, PrivacyControls} from './enhancements/Panels';
+import {QualitySection, presetDims} from './enhancements/Quality';
 import {text as extra} from './enhancements/strings';
 import './enhancements/styles.css';
 
@@ -871,6 +872,13 @@ function ScreenView(props: ShellProps) {
   const start = async () => {
     try {
       await api.invoke("screen_start");
+      // Re-apply the saved quality preset on every fresh capture: the phone
+      // resets to its 540p/q65 default on each pipeline build, so a preset
+      // chosen last session would otherwise be lost on every start.
+      try {
+        const [maxWidth, quality] = presetDims(localStorage.getItem("lynko-mirror-quality") ?? "balanced");
+        await api.invoke("set_quality", { maxWidth, quality });
+      } catch { /* quality preset is best-effort on start */ }
       setStreaming(true);
       toast(tr(lang, "desktop", "screen_starting"), "info");
     } catch (e) { toast(`Stream failed: ${e}`, "err"); }
@@ -1222,6 +1230,7 @@ function SettingsView(props: ShellProps) {
           <div className="what"><strong>{T("about")}</strong><span>{T("inspired_by")}</span></div>
         </div>
       </div>
+      <QualitySection lang={lang}/>
     </div>
   );
 }
