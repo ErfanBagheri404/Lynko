@@ -510,7 +510,7 @@ class LinkService : Service() {
                     .put("clipboard_sync", true)
                     .put("file_transfer", true)
                     .put("notifications", true)
-                    .put("audio_capture", false) // real audio lands later
+                    .put("audio_capture", true)
                     .put("battery_status", true))
                 .put("link_port", LINK_PORT)
                 .put("transfer_port", 7914)
