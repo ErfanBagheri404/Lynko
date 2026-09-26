@@ -1,4 +1,9 @@
 <resources>
     <string name="app_name">Lynko</string>
     <string name="accessibility_service_description">Lynko uses this to receive tap and swipe commands from your paired desktop.</string>
+    <string name="nav_home">Home</string>
+    <string name="nav_screen">Share</string>
+    <string name="interface_animations">Interface animations</string>
+    <string name="motion_on">Interface animations on</string>
+    <string name="motion_off">Interface animations off</string>
 </resources>

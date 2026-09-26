@@ -1,0 +1,6 @@
+<resources>
+<string name="audio_permission">Allow playback audio</string>
+<string name="audio_permission_hint">Android requires recording permission to capture app playback. Lynko uses playback capture, not the microphone. Some apps block capture.</string>
+<string name="audio_permission_granted">Audio permission granted. Press Audio on desktop.</string>
+<string name="audio_permission_denied">Audio permission denied. You can enable it in Android app permissions.</string>
+</resources>

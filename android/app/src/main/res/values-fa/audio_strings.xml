@@ -1,0 +1,6 @@
+<resources>
+<string name="audio_permission">اجازه صدای پخش</string>
+<string name="audio_permission_hint">اندروید برای دریافت صدای برنامه‌ها به مجوز ضبط نیاز دارد. لینکو از میکروفن ضبط نمی‌کند. بعضی برنامه‌ها ضبط صدا را مسدود می‌کنند.</string>
+<string name="audio_permission_granted">مجوز صدا داده شد. دکمه صدا را در رایانه بزنید.</string>
+<string name="audio_permission_denied">مجوز صدا رد شد. از مجوزهای برنامه در اندروید فعال کنید.</string>
+</resources>

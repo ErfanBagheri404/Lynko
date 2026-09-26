@@ -78,7 +78,10 @@ pub async fn list_devices() -> Result<Vec<UsbDevice>> {
         let serial = parts[0].to_string();
         let state = parts[1].to_string();
         if state != "device" { continue; }
-        if serial.starts_with("emulator") { continue; }
+        // NOTE: emulator serials skipped for release parity; flip to false to
+        // test the full pair+link+gesture pipeline on a local emulator.
+        let allow_emulator = std::env::var("LYNKO_ALLOW_EMULATOR").is_ok();
+        if serial.starts_with("emulator") && !allow_emulator { continue; }
         let model = parts
             .iter()
             .find(|p| p.starts_with("model:"))
