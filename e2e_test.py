@@ -130,6 +130,7 @@ def main():
     test_pairing()
     asyncio.run(test_link_session())
     test_file_transfer()
+    test_audio_frames()
     print("\n=== SUMMARY ===", flush=True)
     fails = [r for r in results if not r[1]]
     passes = [r for r in results if r[1]]
@@ -175,6 +176,61 @@ def test_file_transfer():
             break
     ws.close()
     check("file transfer: LF1 chunk accepted", seen_file_msg, f"payload_bytes={len(raw_payload)}")
+
+
+def test_audio_frames():
+    """The regression that made audio dead.
+
+    Audio used to be framed with LF1 — the same magic as a file chunk — and the
+    desktop decodes LF1 first. The sample rate's low byte (0x80 for 16 kHz) was
+    read as an id length, so every frame was misparsed as a garbage file chunk
+    and the audio branch was unreachable. Frames are LA1 now; this asserts the
+    sim's real tone frames arrive as audio, not as file chunks.
+    """
+    import struct
+    import websocket
+
+    ws = websocket.create_connection(LINK, timeout=5)
+    ws.send(json.dumps({"t": "start_audio", "d": None}))
+    time.sleep(0.05)
+
+    # LA1 + u16 rate + u16 chans + u32 count + PCM i16 LE
+    audio_frames, file_chunks, other = 0, 0, 0
+    deadline = time.time() + 3.0
+    while time.time() < deadline:
+        try:
+            m = ws.recv()
+        except Exception:
+            break
+        if isinstance(m, str):
+            continue
+        if m[:3] == b"LA1":
+            audio_frames += 1
+            rate, chans, count = struct.unpack("<HHI", m[3:11])
+            if audio_frames == 1:
+                check(
+                    "audio: LA1 header parses (rate/channels/count)",
+                    rate == 16000 and chans == 1 and count > 0 and len(m) == 11 + count * 2,
+                    f"rate={rate} chans={chans} count={count} bytes={len(m)}",
+                )
+        elif m[:3] == b"LF1":
+            file_chunks += 1
+        else:
+            other += 1
+
+    ws.send(json.dumps({"t": "stop_audio", "d": None}))
+    ws.close()
+
+    check(
+        "audio: sim streams LA1 frames while started",
+        audio_frames >= 3,
+        f"audio={audio_frames} file_chunks={file_chunks} other={other}",
+    )
+    check(
+        "audio: no LA1 frame is mistaken for a file chunk",
+        file_chunks == 0,
+        f"file_chunks={file_chunks}",
+    )
 
 
 if __name__ == "__main__":
