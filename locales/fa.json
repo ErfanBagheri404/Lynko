@@ -163,7 +163,14 @@
     "status_connected": "متصل",
     "stop": "توقف",
     "stop_audio": "توقف صدای گوشی",
-    "via_usb": "اتصال USB"
+    "via_usb": "اتصال USB",
+    "notif_filter_apps": "برنامه‌ها",
+    "notif_filter_hint": "بی‌صدا کردن، اعلان‌ها و تاریخچه این برنامه‌ها را تا زمان بازگرداندن پنهان می‌کند.",
+    "notif_mute": "بی‌صدا",
+    "notif_unmute": "بازگرداندن",
+    "notif_snooze_1h": "بی‌صدا تا ۱ ساعت دیگر",
+    "notif_snooze_tomorrow": "بی‌صدا تا فردا",
+    "notif_snooze_tomorrow_short": "۱ روز"
   },
   "settings": {
     "language": "زبان",

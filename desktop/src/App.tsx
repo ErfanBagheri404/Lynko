@@ -8,7 +8,7 @@ import {
 import QRCode from "qrcode";
 import {IncomingShare} from "./enhancements/IncomingShare";
 import {usePreferences, readPreferences, useTransfers, type Preferences, type TransferItem} from './enhancements/hooks';
-import {filterNotification} from './enhancements/logic.mjs';
+import {filterNotification, isAppSuppressed} from './enhancements/logic.mjs';
 import {HealthPanel, FeatureControls, PrivacyControls} from './enhancements/Panels';
 import {text as extra} from './enhancements/strings';
 import './enhancements/styles.css';
@@ -158,7 +158,18 @@ export default function App() {
   const lastFrameRef = useRef<number|null>(null);
   const [now,setNow] = useState(Date.now());
   useEffect(() => { lastFrameRef.current = null; setLastFrame(null); }, [link.connected,link.device_id]);
-  const [notes, setNotes] = useState<NoteItem[]>([]);
+  const [notes, setNotes] = useState<NoteItem[]>(() => {
+    try {
+      const raw = localStorage.getItem("lynko-notes");
+      if (!raw) return [];
+      const arr = JSON.parse(raw);
+      if (!Array.isArray(arr)) return [];
+      return arr.filter((n) => n && typeof n.app === "string").slice(0, 50);
+    } catch { return []; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("lynko-notes", JSON.stringify(notes.slice(0, 50))); } catch { /* quota */ }
+  }, [notes]);
   const { toasts, push: toast } = useToasts();
   // Mirror FPS, lifted from ScreenView for the footer: updated 1/sec, so the
   // whole-tree re-render cost is negligible (frames bypass React anyway).
@@ -357,6 +368,12 @@ export default function App() {
         const safe = filterNotification({app:String(ev.d.app ?? ''), title:String(ev.d.title ?? ''), body:String(ev.d.text ?? ev.d.body ?? '')}, readPreferences());
         if (!safe) return;
         const {app,title,body} = safe;
+        // Per-app mute/snooze is enforced HERE, before history and before the
+        // OS toast, so muting an app stops its alerts immediately without a
+        // reconnect and without dropping the notification from the phone.
+        const mutedApps: string[] = (() => { try { return JSON.parse(localStorage.getItem("lynko-muted-apps") ?? "[]"); } catch { return []; } })();
+        const snoozedApps: Record<string, number> = (() => { try { return JSON.parse(localStorage.getItem("lynko-snoozed-apps") ?? "{}"); } catch { return {}; } })();
+        if (isAppSuppressed(app, mutedApps, snoozedApps)) return;
         // The Rust core re-serializes events in snake_case: the phone sends
         // notifId, the frontend receives notif_id. Read both — falling back
         // to 0 silently breaks every notification reply.
@@ -1120,6 +1137,28 @@ function NotificationsView(props: ShellProps) {
   const { notes, toast } = props;
   const [replyTo, setReplyTo] = useState<NoteItem | null>(null);
   const [replyText, setReplyText] = useState("");
+  // Per-app mute + snooze, persisted. `muted` is a hard block list;
+  // `snoozed` maps app → epoch-ms the suppression lifts.
+  const [muted, setMuted] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem("lynko-muted-apps") ?? "[]"); } catch { return []; }
+  });
+  const [snoozed, setSnoozed] = useState<Record<string, number>>(() => {
+    try { return JSON.parse(localStorage.getItem("lynko-snoozed-apps") ?? "{}"); } catch { return {}; }
+  });
+  useEffect(() => { try { localStorage.setItem("lynko-muted-apps", JSON.stringify(muted)); } catch { /* quota */ } }, [muted]);
+  useEffect(() => { try { localStorage.setItem("lynko-snoozed-apps", JSON.stringify(snoozed)); } catch { /* quota */ } }, [snoozed]);
+  const isMuted = (app: string) => isAppSuppressed(app, muted, snoozed);
+  const toggleMute = (app: string) => {
+    setMuted((m) => m.includes(app) ? m.filter((a) => a !== app) : [...m, app]);
+    // Muting also clears any stale snooze for the app.
+    setSnoozed((z) => { const { [app]: _, ...rest } = z; return rest; });
+  };
+  const snooze = (app: string, ms: number) => {
+    setSnoozed((z) => ({ ...z, [app]: Date.now() + ms }));
+  };
+  // Apps seen this session, most-recent first — the mute/snooze surface.
+  const seenApps = [...new Set(notes.map((n) => n.app))];
+  const visible = notes.filter((n) => !isMuted(n.app));
 
   const sendReply = async () => {
     if (!replyTo || !replyText.trim() || !readPreferences().notifications || readPreferences().blockedApps.includes(replyTo.app)) return;
@@ -1136,9 +1175,47 @@ function NotificationsView(props: ShellProps) {
     <div className="view">
       <PageHead title={T("notif_title")} sub={T("notif_sub")} />
       <PrivacyControls lang={lang} prefs={props.prefs} updatePrefs={props.updatePrefs} clear={props.clearNotes}/>
+      {seenApps.length > 0 && (
+        <div className="card notif-apps">
+          <div className="set-row">
+            <div className="what">
+              <strong>{T("notif_filter_apps")}</strong>
+              <span>{T("notif_filter_hint")}</span>
+            </div>
+          </div>
+          {seenApps.map((app) => (
+            <div className="set-row notif-app" key={app}>
+              <div className="what"><strong>{app}</strong></div>
+              <div className="row">
+                <button
+                  className="ghost sm"
+                  onClick={() => snooze(app, 60 * 60 * 1000)}
+                  title={T("notif_snooze_1h")}
+                >
+                  1h
+                </button>
+                <button
+                  className="ghost sm"
+                  onClick={() => snooze(app, 24 * 60 * 60 * 1000)}
+                  title={T("notif_snooze_tomorrow")}
+                >
+                  {T("notif_snooze_tomorrow_short")}
+                </button>
+                <button
+                  className={muted.includes(app) ? "btn sm on" : "btn sm"}
+                  onClick={() => toggleMute(app)}
+                  aria-pressed={muted.includes(app)}
+                >
+                  {muted.includes(app) ? T("notif_unmute") : T("notif_mute")}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="card">
-        {notes.length === 0 ? <p className="empty-inline">{T("no_notifications_yet")}</p> :
-          notes.map((n) => (
+        {visible.length === 0 ? <p className="empty-inline">{T("no_notifications_yet")}</p> :
+          visible.map((n) => (
             <div className="note-row" key={n.id}>
               <div className="note-app">{n.app}</div>
               <p className="note-title">{n.title}</p>
