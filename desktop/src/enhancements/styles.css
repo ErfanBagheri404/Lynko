@@ -34,3 +34,9 @@ html[data-motion=off] *,html[data-motion=off] *::before,html[data-motion=off] *:
 
 .incoming-status { position:fixed; bottom:48px; right:20px; z-index:80; max-width:min(600px,80vw); padding:12px 16px; background:var(--card); color:var(--ink0,#e8e6e1); border:1px solid var(--line); overflow-wrap:anywhere; }
 .incoming-status button { margin-inline-start:12px; }
+/* Transfer progress: flat amber bar, hairline track — no gradient, no shadow.
+   min-width so a 0-byte start still shows a visible sliver. */
+.incoming-bar { appearance:none; -webkit-appearance:none; width:min(220px,40vw); height:4px; margin-inline:10px; vertical-align:middle; border:1px solid var(--line); border-radius:2px; background:transparent; }
+.incoming-bar::-webkit-progress-bar { background:transparent; }
+.incoming-bar::-webkit-progress-value { background:var(--accent,#FFB454); }
+.incoming-bar::-moz-progress-bar { background:var(--accent,#FFB454); }

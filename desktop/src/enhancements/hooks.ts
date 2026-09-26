@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createTransferQueue } from './logic.mjs';
-export const defaults = { screen:true, input:true, clipboard:true, files:true, notifications:true, audio:true, hidePreview:false, blockedApps:[] as string[], animations:true };
+export const defaults = { screen:true, input:true, clipboard:true, files:true, notifications:true, audio:true, hidePreview:false, blockedApps:[] as string[], animations:true, hotkeys:false };
 export type Preferences = typeof defaults;
 export function readPreferences(): Preferences {
   try {
@@ -90,4 +90,16 @@ export function useTransfers(api:Bridge, connected:boolean, deviceId:string|unde
     queue.current.enqueue(id);publish();pump.current();
   };
   return {files,queueFile,cancelFile,retryFile};
+}
+
+/** Call `toggle_hotkeys` on the Rust side whenever the pref flips. A rejected
+ *  promise means the OS refused the combo (another app owns it) — the Settings
+ *  toggle rolls itself back on `onConflict` instead of lying about being on. */
+export function useHotkeys(api:Bridge, enabled:boolean, onConflict:(reason:string)=>void) {
+  useEffect(() => {
+    let disposed=false;
+    void api.invoke('toggle_hotkeys', {enabled})
+      .catch((e) => { if (!disposed) onConflict(String(e)); });
+    return () => { disposed = true; };
+  }, [api, enabled, onConflict]);
 }

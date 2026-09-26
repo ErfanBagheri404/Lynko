@@ -503,6 +503,13 @@ async fn run_link(
 
     let (mut ws_sink, mut ws_src) = ws_stream.split();
 
+    // Announce ourselves on the wire so the phone can label the desktop in
+    // its share-sheet peer picker (it otherwise only has the socket IP).
+    {
+        let hello = hello_frame(&desktop_name());
+        let _ = ws_sink.send(Message::Text(hello.into())).await;
+    }
+
     // writer: rx channel → ws_sink
     {
         let alive_w = alive.clone();
@@ -1071,6 +1078,39 @@ fn list_devices(state: State<'_, LynkoState>) -> Vec<Device> {
     state.merged()
 }
 
+/// Reveal a received file in the OS file manager. Uses the platform's own
+/// opener so no shell plugin is needed: explorer /select on Windows,
+/// open -R on macOS, xdg-open on Linux.
+#[tauri::command]
+fn reveal_path(path: String) -> Result<(), String> {
+    let p = std::path::Path::new(&path);
+    if !p.exists() {
+        return Err("file no longer exists".into());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(format!("/select,{}", p.to_string_lossy()))
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .args(["-R", &p.to_string_lossy()])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(p.parent().unwrap_or(p))
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 fn desktop_name() -> String {
     std::env::var("COMPUTERNAME")
@@ -1195,11 +1235,77 @@ fn pin() -> Option<String> {
 
 static PIN: std::sync::OnceLock<Mutex<Option<String>>> = std::sync::OnceLock::new();
 
+/// Global hotkeys. Ctrl+Shift+L shows/hides the window, Ctrl+Shift+M toggles
+/// the mirror. Registration is ALL-OR-NOTHING: if one binding is already owned
+/// by another app, every binding is rolled back and the error is returned, so
+/// the caller never believes hotkeys are on when only half of them work.
+/// Idempotent by construction — the previous registration is always dropped
+/// first (Tauri treats a duplicate registration as a hard error).
+#[tauri::command]
+fn toggle_hotkeys(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    use tauri::Emitter;
+    use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+    let gs = app.global_shortcut();
+    let binds = [
+        (Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyL), "toggle_window"),
+        (Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyM), "toggle_mirror"),
+    ];
+    for (sc, _) in &binds {
+        let _ = gs.unregister(sc.clone());
+    }
+    if !enabled {
+        return Ok(());
+    }
+    for (sc, action) in binds {
+        let handle = app.clone();
+        let result = gs.on_shortcut(sc.clone(), move |_app, _sc, event| {
+            // Fire on KEY-DOWN only — the plugin also emits a key-up for the
+            // same binding, and acting on both would double every toggle.
+            if event.state() != ShortcutState::Pressed {
+                return;
+            }
+            match action {
+                "toggle_window" => {
+                    if let Some(w) = handle.get_webview_window("main") {
+                        match w.is_visible() {
+                            Ok(true) => { let _ = w.hide(); }
+                            _ => {
+                                let _ = w.show();
+                                let _ = w.set_focus();
+                            }
+                        }
+                    }
+                }
+                "toggle_mirror" => {
+                    let _ = handle.emit("lynko-hotkey", "toggle_mirror");
+                }
+                _ => {}
+            }
+        });
+        if let Err(e) = result {
+            // Roll back whatever already registered so the state matches the
+            // error we are about to report.
+            for (sc2, _) in &binds {
+                let _ = gs.unregister(sc2.clone());
+            }
+            return Err(e.to_string());
+        }
+    }
+    Ok(())
+}
+
+/// The `hello` frame the desktop pushes on link-up so the phone can label this
+/// PC in its share-sheet picker (it otherwise only has the socket IP).
+fn hello_frame(alias: &str) -> String {
+    serde_json::json!({ "t": "hello", "d": { "alias": alias } }).to_string()
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
             let handle = app.handle().clone();
             let paired = load_pairs(&handle);
@@ -1224,6 +1330,7 @@ fn main() {
             protocol_info,
             list_devices,
             desktop_name,
+            reveal_path,
             pair_device,
             forget_device,
             connect,
@@ -1250,8 +1357,30 @@ fn main() {
             transfer_receive::answer_transfer,
             transfer_receive::set_transfer_pin,
             set_pc_clipboard,
-            get_pc_clipboard
+            get_pc_clipboard,
+            toggle_hotkeys
         ])
         .run(tauri::generate_context!())
         .expect("error while running Lynko");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The phone parses this with JSONObject, so it must be a single valid
+    /// JSON object with t="hello" — a hand-rolled format! string with an
+    /// unescaped PC name would break the link for any name with a quote.
+    #[test]
+    fn hello_frame_is_valid_json_with_the_alias() {
+        let v: serde_json::Value = serde_json::from_str(&hello_frame("DESKTOP-ABC")).unwrap();
+        assert_eq!(v["t"], "hello");
+        assert_eq!(v["d"]["alias"], "DESKTOP-ABC");
+    }
+
+    #[test]
+    fn hello_frame_escapes_hostile_alias_names() {
+        let v: serde_json::Value = serde_json::from_str(&hello_frame(r#"My "PC"\x"#)).unwrap();
+        assert_eq!(v["d"]["alias"], r#"My "PC"\x"#);
+    }
 }

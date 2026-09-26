@@ -596,6 +596,14 @@ class LinkService : Service() {
 
     private fun handleCommand(t: String, d: Any?, conn: WebSocket) {
         when (t) {
+            // Desktop identity for the share-sheet peer picker. The phone
+            // otherwise only has the socket's IP address to show.
+            "hello" -> {
+                (d as? JSONObject)?.optString("alias")?.takeIf { it.isNotBlank() }?.let {
+                    PeerInfo.alias = it
+                    MainActivity.refreshSharePeers()
+                }
+            }
             // share_offer / share_chunk / share_end are now HTTP-based (LocalSend v2.2).
             "status_get" -> sendEvent(conn, "battery", JSONObject()
                 .put("pct", BatteryLevel.read(applicationContext))

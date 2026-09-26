@@ -50,22 +50,28 @@ object ShareSender {
             else -> "application/octet-stream"
         }
     }
-    /** Send one file to a desktop running a LocalSend v2.2 server. */
-    fun send(context: Context, uri: Uri, host: String, port: Int = 53317, pin: String? = null) {
+    /** Send one or more files (Share Sheet) to a desktop running a LocalSend v2.2 server. */
+    fun send(context: Context, uris: List<Uri>, host: String, port: Int = 53317, pin: String? = null) {
+        if (uris.isEmpty()) return
         if (!started.compareAndSet(false, true)) return
         busy = true
         val app = context.applicationContext
         state("share_preparing")
         Thread({
-            var staged: Staged? = null
+            // Staged in the picker order, so the desktop lists the files the
+            // way the user selected them. Staging reads every content:// URI
+            // once and hashes it — that is where the "preparing" state lives.
+            val staged = mutableListOf<Staged>()
             var sessionId: String? = null
             val alias = android.os.Build.MODEL.ifBlank { "Android" }
             val base = "http://$host:$port/api/localsend/v2"
             val pinArg = if (pin.isNullOrBlank()) "" else "&pin=$pin"
             try {
-                staged = stage(app, uri) ?: error("Cannot open selected file")
-                state("share_waiting", staged.name)
-                val st = staged
+                for (u in uris) {
+                    val st = stage(app, u) ?: error("Cannot open selected file")
+                    staged.add(st)
+                }
+                state("share_waiting", if (staged.size == 1) staged[0].name else "${staged.size} files")
                 val info = JSONObject()
                     .put("alias", alias)
                     .put("version", "2.2")
@@ -77,12 +83,15 @@ object ShareSender {
                     .put("port", port)
                     .put("protocol", "http")
                     .put("download", false)
-                val filesObj = JSONObject().put(st.id, JSONObject()
-                    .put("id", st.id)
-                    .put("fileName", st.name)
-                    .put("size", st.size)
-                    .put("fileType", st.mime)
-                    .put("sha256", st.sha256))
+                val filesObj = JSONObject()
+                staged.forEach { st ->
+                    filesObj.put(st.id, JSONObject()
+                        .put("id", st.id)
+                        .put("fileName", st.name)
+                        .put("size", st.size)
+                        .put("fileType", st.mime)
+                        .put("sha256", st.sha256))
+                }
 
                 // POST /prepare-upload → {sessionId, files:{id:token}}
                 val manifest = JSONObject()
@@ -94,31 +103,40 @@ object ShareSender {
                     "application/json",
                 )
                 if (code == 204) {
-                    state("share_sent", staged.name)
+                    state("share_sent", if (staged.size == 1) staged[0].name else "${staged.size} files")
                     return@Thread
                 }
                 if (code != 200) error("prepare failed: $code $body")
                 val resp = JSONObject(body)
                 sessionId = resp.getString("sessionId")
                 val tokens = resp.getJSONObject("files")
-                val token = tokens.getString(st.id)
-                state("share_sending", staged.name)
+                val label = if (staged.size == 1) staged[0].name else "${staged.size} files"
+                state("share_sending", label)
 
-                // POST /upload?sessionId&fileId&token — whole file as ONE binary POST (spec 4.2).
-                val st2 = staged
-                val (c, b) = httpPostFile(
-                    "$base/upload?sessionId=$sessionId&fileId=${st2.id}&token=$token",
-                    st2.file, st2.size,
-                ) { written -> state("share_sending", "${st2.name} · $written / ${st2.size}") }
-                if (c == 422) error("checksum mismatch")
-                if (c != 200) error("upload failed: $c $b")
-                state("share_sent", staged.name)
+                // POST /upload?sessionId&fileId&token — one binary POST per file
+                // (spec 4.2). The desktop drops each file into Downloads as it
+                // lands, so a failure halfway still leaves the earlier files.
+                for (i in staged.indices) {
+                    val st = staged[i]
+                    val token = tokens.getString(st.id)
+                    val prefix = if (staged.size > 1) "($i+1/${staged.size}) " else ""
+                    val (c, b) = httpPostFile(
+                        "$base/upload?sessionId=$sessionId&fileId=${st.id}&token=$token",
+                        st.file, st.size,
+                    ) { written -> state("share_sending", "$prefix${st.name} · $written / ${st.size}") }
+                    if (c == 422) error("checksum mismatch: ${st.name}")
+                    if (c != 200) error("upload failed: $c $b")
+                }
+                state("share_sent", label)
             } catch (e: Exception) {
                 Log.w(TAG, "send failed: ${e.message}")
                 val sid = sessionId
                 if (sid != null) runCatching { httpPost("$base/cancel?sessionId=$sid$pinArg") }
                 state("share_failed", e.message ?: "Transfer failed")
             } finally {
+                // Staged cache copies are scratch — drop them all, sent or not,
+                // so a cancelled batch never fills the phone's cache.
+                staged.forEach { runCatching { it.file.delete() } }
                 busy = false
                 started.set(false)
                 android.os.Handler(android.os.Looper.getMainLooper()).post { onChange?.invoke() }
