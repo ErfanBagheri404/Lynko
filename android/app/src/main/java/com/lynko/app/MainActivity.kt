@@ -22,8 +22,18 @@ import androidx.core.app.ActivityCompat
  */
 class MainActivity : AppCompatActivity() {
 
-    private companion object {
+    companion object {
         val PIN: String get() = LinkService.PIN
+
+        /** Live share tab, so a `hello` from the desktop can repaint it. */
+        @JvmStatic var shareTab: ShareTabView? = null
+
+        /** Repaint the share tab (desktop name arrived or changed). Runs on
+         *  the UI thread via View.post — this is a companion, not an Activity. */
+        @JvmStatic fun refreshSharePeers() {
+            val tab = shareTab ?: return
+            tab.post { tab.render() }
+        }
     }
 
     // --- tab plumbing ---
@@ -60,7 +70,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var permNotifIcon: TextView
     private lateinit var permNotifText: TextView
 
-    private var sharedUri: android.net.Uri? = null
+    private var sharedUris: List<android.net.Uri>? = null
     private var pendingMirror = false
     private var currentTab = 0  // 0=home, 1=screen
     private var feedback: com.google.android.material.snackbar.Snackbar? = null
@@ -146,9 +156,10 @@ class MainActivity : AppCompatActivity() {
             )
         )
 
+        shareTab = screenTab
         screenTab.onChoose = {
             if (!PhoneState.link) showFeedback(Loc.t("phone", "share_connect"))
-            else if (sharedUri != null) chooseSharePeer(sharedUri!!)
+            else if (!sharedUris.isNullOrEmpty()) chooseSharePeer(sharedUris!!)
             else startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                 type = "*/*"; addCategory(Intent.CATEGORY_OPENABLE)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -430,29 +441,39 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun chooseSharePeer(uri: android.net.Uri) {
+    private fun chooseSharePeer(uris: List<android.net.Uri>) {
         val peers = LinkService.instance?.sharePeers().orEmpty()
         if (peers.isEmpty()) showFeedback(Loc.t("phone", "share_connect"))
         else androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle(Loc.t("phone", "share_destination"))
-            .setItems(peers.map { it.remoteSocketAddress?.address?.hostAddress ?: "Desktop" }.toTypedArray()) { _, i ->
+            // The desktop's computer name when it announced itself; the raw
+            // socket IP only as a fallback (older desktop, or before hello).
+            .setItems(peers.map { PeerInfo.alias.ifBlank { it.remoteSocketAddress?.address?.hostAddress ?: "Desktop" } }.toTypedArray()) { _, i ->
                 val host = peers[i].remoteSocketAddress?.address?.hostAddress ?: return@setItems
-                ShareSender.send(applicationContext, uri, host, 53317, PinStore.current(this))
-                sharedUri = null
+                ShareSender.send(applicationContext, uris, host, 53317, PinStore.current(this))
+                sharedUris = null
             }.setNegativeButton(android.R.string.cancel, null).show()
     }
 
     @Suppress("DEPRECATION")
     private fun readShareIntent() {
-        if (intent.action != Intent.ACTION_SEND) return
-        val uri = intent.getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM)
+        val action = intent.action
+        if (action != Intent.ACTION_SEND && action != Intent.ACTION_SEND_MULTIPLE) return
+        // SEND carries one URI, SEND_MULTIPLE a list. Accept both, and keep the
+        // order the picker gave us so the desktop sees photos in the order the
+        // user selected them.
+        val uris: List<android.net.Uri> = if (action == Intent.ACTION_SEND_MULTIPLE) {
+            intent.getParcelableArrayListExtra<android.net.Uri>(Intent.EXTRA_STREAM).orEmpty()
+        } else {
+            listOfNotNull(intent.getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM))
+        }.filter { it.scheme == "content" }
         intent.action = null
-        if (uri?.scheme == "content") {
-            sharedUri = uri
-            switchTab(1, false)
-            if (PhoneState.link) chooseSharePeer(uri)
-            else showFeedback(Loc.t("phone", "share_connect"))
-        }
+        intent.removeExtra(Intent.EXTRA_STREAM)
+        if (uris.isEmpty()) return
+        sharedUris = uris
+        switchTab(1, false)
+        if (PhoneState.link) chooseSharePeer(uris)
+        else showFeedback(Loc.t("phone", "share_connect"))
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -470,7 +491,7 @@ class MainActivity : AppCompatActivity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == 9100 && resultCode == RESULT_OK) {
             data?.data?.let { uri ->
-                chooseSharePeer(uri)
+                chooseSharePeer(listOf(uri))
             }
             return
         }

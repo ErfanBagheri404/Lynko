@@ -43,6 +43,14 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="*/*" />
             </intent-filter>
+            <!-- Multi-select in Photos/Files/Gallery sends here; without this
+                 filter the app is simply absent from the share sheet when more
+                 than one item is selected. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
         </activity>
 
         <!-- Transfer consent (LocalSend-style prepare-upload gate). Launched

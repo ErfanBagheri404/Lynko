@@ -15,7 +15,7 @@
 
 use sha2::Digest;
 use std::collections::HashMap;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use tauri::Emitter;
 
@@ -29,8 +29,6 @@ pub struct Session {
     pub tokens: HashMap<String, String>,
     /// Sender IP the session was created from (403 guard on upload).
     pub sender_ip: String,
-    /// fileId -> staged bytes, filled by upload
-    pub received: HashMap<String, Vec<u8>>,
     /// Created-at timestamp for expiry sweep (120s, same as sender timeout).
     pub created_at: std::time::Instant,
 }
@@ -238,7 +236,6 @@ fn handle(app: tauri::AppHandle, mut request: tiny_http::Request) {
     let ip = request.remote_addr().map(|a| a.ip().to_string()).unwrap_or_default();
 
     let mut body = Vec::new();
-    let _ = request.as_reader().read_to_end(&mut body);
 
     match (method.as_str(), path.as_str()) {
         ("GET", "/api/localsend/v2/info") => {
@@ -249,10 +246,15 @@ fn handle(app: tauri::AppHandle, mut request: tiny_http::Request) {
             let _ = request.respond(json(200, &info_json().to_string()));
         }
         ("POST", "/api/localsend/v2/prepare-upload") => {
+            let _ = request.as_reader().read_to_end(&mut body);
             let _ = request.respond(prepare_upload(&app, &params, &body, &ip));
         }
         ("POST", "/api/localsend/v2/upload") => {
-            let _ = request.respond(upload(&app, &params, body, &ip));
+            // NOT pre-read: upload() streams the body straight off the socket
+            // so a large photo never lands in memory and progress is real.
+            // Build the response first — respond() consumes the request.
+            let resp = upload(&app, &params, &mut request, &ip);
+            let _ = request.respond(resp);
         }
         ("POST", "/api/localsend/v2/cancel") => {
             if let Some(sid) = params.get("sessionId") {
@@ -261,6 +263,7 @@ fn handle(app: tauri::AppHandle, mut request: tiny_http::Request) {
             let _ = request.respond(json(200, "{}"));
         }
         ("POST", "/api/localsend/v2/prepare-download") => {
+            let _ = request.as_reader().read_to_end(&mut body);
             let _ = request.respond(prepare_download(&body));
         }
         ("GET", "/api/localsend/v2/download") => {
@@ -338,7 +341,6 @@ fn prepare_upload(
         files: HashMap::new(),
         tokens: HashMap::new(),
         sender_ip: ip.to_string(),
-        received: HashMap::new(),
         created_at: std::time::Instant::now(),
     };
     let mut reply_tokens = serde_json::Map::new();
@@ -376,12 +378,112 @@ fn prepare_upload(
     json(200, &out.to_string())
 }
 
+/// Why a stream could not be stored. Maps 1:1 onto the LocalSend status codes
+/// the upload endpoint must answer with.
+#[derive(Debug, PartialEq)]
+enum StoreError {
+    /// Sender aborted mid-body; temp file removed.
+    Aborted,
+    /// Declared sha256 does not match the bytes received; temp file removed.
+    Checksum,
+    /// Zero bytes arrived.
+    Empty,
+    /// Local I/O failure.
+    Io(String),
+}
+
+impl StoreError {
+    fn status(&self) -> u16 {
+        match self {
+            StoreError::Aborted | StoreError::Empty => 400,
+            StoreError::Checksum => 422,
+            StoreError::Io(_) => 500,
+        }
+    }
+    fn code(&self) -> String {
+        match self {
+            StoreError::Aborted => r#"{"error":"read_failed"}"#.into(),
+            StoreError::Checksum => r#"{"error":"checksum_mismatch"}"#.into(),
+            StoreError::Empty => r#"{"error":"empty_file"}"#.into(),
+            StoreError::Io(e) => format!(r#"{{"error":"{e}"}}"#),
+        }
+    }
+}
+
+/// Stream `reader` into `dir` under `name`, hashing on the way through.
+///
+/// The bytes land in a `.part` temp file first and are only renamed onto the
+/// final name once the hash matches, so a failure at any point leaves nothing
+/// in Downloads — never a half-written photo with a real name. `on_progress`
+/// is called with (written, total) at most 4×/s so the UI bar stays cheap.
+///
+/// Returns the final absolute path.
+fn store_stream<R: Read>(
+    dir: &std::path::Path,
+    name: &str,
+    expected_sha: Option<&str>,
+    mut reader: R,
+    total: u64,
+    mut on_progress: impl FnMut(u64, u64),
+) -> Result<std::path::PathBuf, StoreError> {
+    std::fs::create_dir_all(dir).map_err(|e| StoreError::Io(e.to_string()))?;
+    let final_path = unique_path(dir, name);
+    let temp = final_path.with_file_name(format!(".lynko-{}.part", uuid::Uuid::new_v4()));
+    let mut file = std::fs::File::create(&temp).map_err(|e| StoreError::Io(e.to_string()))?;
+    let mut hasher = sha2::Sha256::new();
+    let mut buf = vec![0u8; 256 * 1024];
+    let mut written: u64 = 0;
+    let mut last_emit = std::time::Instant::now();
+    loop {
+        let n = match reader.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(_) => {
+                let _ = std::fs::remove_file(&temp);
+                return Err(StoreError::Aborted);
+            }
+        };
+        if let Err(e) = file.write_all(&buf[..n]) {
+            let _ = std::fs::remove_file(&temp);
+            return Err(StoreError::Io(e.to_string()));
+        }
+        hasher.update(&buf[..n]);
+        written += n as u64;
+        if last_emit.elapsed().as_millis() > 250 {
+            last_emit = std::time::Instant::now();
+            on_progress(written, total);
+        }
+    }
+    if let Some(expected) = expected_sha {
+        let actual = format!("{:x}", hasher.finalize());
+        if !actual.eq_ignore_ascii_case(expected) {
+            let _ = std::fs::remove_file(&temp);
+            return Err(StoreError::Checksum);
+        }
+    }
+    if written == 0 {
+        let _ = std::fs::remove_file(&temp);
+        return Err(StoreError::Empty);
+    }
+    drop(file);
+    std::fs::rename(&temp, &final_path).map_err(|e| {
+        let _ = std::fs::remove_file(&temp);
+        StoreError::Io(e.to_string())
+    })?;
+    on_progress(written, total);
+    Ok(final_path)
+}
+
 /// POST /api/localsend/v2/upload?sessionId&fileId&token (spec 4.2).
 /// 200 stored · 403 bad token/IP · 409 session gone · 422 checksum mismatch.
+///
+/// The body is streamed to a `.part` temp file and hashed as it arrives, so a
+/// multi-MB photo never sits in memory and an aborted transfer leaves a
+/// partial file that gets removed instead of a half-file in Downloads.
 fn upload(
     app: &tauri::AppHandle,
     params: &HashMap<String, String>,
-    body: Vec<u8>,
+    request: &mut tiny_http::Request,
     ip: &str,
 ) -> tiny_http::Response<std::io::Cursor<Vec<u8>>> {
     let sid = params.get("sessionId").cloned().unwrap_or_default();
@@ -390,45 +492,71 @@ fn upload(
     if sid.is_empty() || file_id.is_empty() || token.is_empty() {
         return json(400, r#"{"error":"missing_params"}"#);
     }
-    let mut all = sessions().lock().unwrap();
-    let session = match all.get_mut(&sid) {
-        Some(s) => s,
-        None => return json(409, r#"{"error":"unknown_session"}"#),
-    };
-    // 403: invalid token (spec 4.2).
-    if session.tokens.get(&file_id).map(|t| t != &token).unwrap_or(true) {
-        return json(403, r#"{"error":"invalid_token"}"#);
-    }
-    // 403: sender IP must match the one that created the session.
-    if !session.sender_ip.is_empty() && ip != session.sender_ip {
-        return json(403, r#"{"error":"invalid_ip"}"#);
-    }
-    let (name, expected) = match session.files.get(&file_id) {
-        Some(f) => (f.name.clone(), f.sha256.clone()),
-        None => return json(400, r#"{"error":"unknown_file"}"#),
-    };
-    // 422: sha256 mismatch (spec 4.2).
-    if let Some(expected) = expected {
-        let mut h = sha2::Sha256::new();
-        h.update(&body);
-        let actual = format!("{:x}", h.finalize());
-        if !actual.eq_ignore_ascii_case(&expected) {
-            return json(422, r#"{"error":"checksum_mismatch"}"#);
+    // Validate the session/token/ip BEFORE reading the body: a rejected
+    // transfer must not cost us the upload.
+    let (name, expected, size) = {
+        let all = sessions().lock().unwrap();
+        let session = match all.get(&sid) {
+            Some(s) => s,
+            None => return json(409, r#"{"error":"unknown_session"}"#),
+        };
+        // 403: invalid token (spec 4.2).
+        if session.tokens.get(&file_id).map(|t| t != &token).unwrap_or(true) {
+            return json(403, r#"{"error":"invalid_token"}"#);
         }
-    }
-    // Never clobber an existing file (same rule as the WS path).
-    let path = save_unique(&name, &body);
-    session.received.insert(file_id.clone(), body);
-    session.files.remove(&file_id);
-    session.tokens.remove(&file_id);
-    let done = session.files.is_empty();
-    if done {
-        all.remove(&sid);
-    }
-    drop(all);
+        // 403: sender IP must match the one that created the session.
+        if !session.sender_ip.is_empty() && ip != session.sender_ip {
+            return json(403, r#"{"error":"invalid_ip"}"#);
+        }
+        match session.files.get(&file_id) {
+            Some(f) => (f.name.clone(), f.sha256.clone(), f.size),
+            None => return json(400, r#"{"error":"unknown_file"}"#),
+        }
+    };
+
+    let dir = download_dir();
+    let store = store_stream(
+        &dir,
+        &name,
+        expected.as_deref(),
+        request.as_reader(),
+        size,
+        |written, total| {
+            let _ = app.emit(
+                "share_status",
+                serde_json::json!({
+                    "status": "receiving", "name": name, "written": written, "size": total
+                }),
+            );
+        },
+    );
+    let final_path = match store {
+        Ok(p) => p,
+        Err(e) => {
+            let _ = app.emit(
+                "share_status",
+                serde_json::json!({
+                    "status": "failed", "error": e.code(), "name": name
+                }),
+            );
+            return json(e.status(), &e.code());
+        }
+    };
+    let path = final_path.to_string_lossy().to_string();
+    let done = {
+        let mut all = sessions().lock().unwrap();
+        if let Some(session) = all.get_mut(&sid) {
+            session.files.remove(&file_id);
+            session.tokens.remove(&file_id);
+        }
+        all.is_empty()
+    };
     let _ = app.emit(
         "share_status",
-        serde_json::json!({ "status": "saved", "name": name, "path": path }),
+        serde_json::json!({
+            "status": if done { "saved" } else { "receiving" },
+            "name": name, "path": path
+        }),
     );
     json(200, "{}")
 }
@@ -504,27 +632,31 @@ fn download(params: &HashMap<String, String>) -> tiny_http::Response<std::io::Cu
     resp
 }
 
-/// Write `name` beside existing files without ever overwriting one.
-fn save_unique(name: &str, data: &[u8]) -> String {
+/// Absolute target for `name` inside `dir`, never clobbering an existing file
+/// (appends " (2)", " (3)", … like the desktop Downloads folder does).
+fn unique_path(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
     let safe: String = name
         .chars()
         .filter(|c| !c.is_control() && *c != '/' && *c != '\\')
         .take(240)
         .collect();
     let safe = if safe.is_empty() { "file.bin".into() } else { safe };
-    let dir = download_dir();
-    let _ = std::fs::create_dir_all(&dir);
     let base = std::path::Path::new(&safe);
-    let stem = base.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "file".into());
-    let ext = base.extension().map(|s| format!(".{}", s.to_string_lossy())).unwrap_or_default();
+    let stem = base
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "file".into());
+    let ext = base
+        .extension()
+        .map(|s| format!(".{}", s.to_string_lossy()))
+        .unwrap_or_default();
     let mut candidate = dir.join(&safe);
     let mut n = 2;
     while candidate.exists() {
         candidate = dir.join(format!("{stem} ({n}){ext}"));
         n += 1;
     }
-    let _ = std::fs::write(&candidate, data);
-    candidate.to_string_lossy().to_string()
+    candidate
 }
 
 fn download_dir() -> std::path::PathBuf {
@@ -541,5 +673,141 @@ fn download_dir() -> std::path::PathBuf {
         }
     }
     std::env::temp_dir()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// unique_path is the "never clobber" rule the upload path depends on: a
+    /// second transfer of the same name must not overwrite the first.
+    #[test]
+    fn unique_path_never_reuses_an_existing_name() {
+        let dir = std::env::temp_dir().join(format!("lynko-unique-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let first = unique_path(&dir, "photo.jpg");
+        assert_eq!(first.file_name().unwrap(), "photo.jpg");
+        std::fs::write(&first, b"first").unwrap();
+        let second = unique_path(&dir, "photo.jpg");
+        assert_eq!(second.file_name().unwrap(), "photo (2).jpg");
+        assert_ne!(first, second);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A hostile name (path traversal, control chars) must land INSIDE dir
+    /// under a sanitized name — the phone controls this string.
+    #[test]
+    fn unique_path_sanitizes_traversal_and_control_chars() {
+        let dir = std::env::temp_dir().join(format!("lynko-safe-{}", uuid::Uuid::new_v4()));
+        let p = unique_path(&dir, "../../evil\u{0}.txt");
+        assert_eq!(p.parent().unwrap(), dir);
+        let name = p.file_name().unwrap().to_string_lossy().to_string();
+        assert!(!name.contains('/') && !name.contains('\\'));
+        assert!(!name.contains('\u{0}'));
+    }
+
+    fn scratch(tag: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("lynko-store-{tag}-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+    fn leftovers(dir: &std::path::Path) -> Vec<String> {
+        std::fs::read_dir(dir).unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+            .filter(|n| n.starts_with(".lynko-") && n.ends_with(".part"))
+            .collect()
+    }
+
+    /// The happy path: bytes land under the real name, contents match, and the
+    /// final progress callback always fires so the bar can reach 100%.
+    #[test]
+    fn store_stream_writes_verified_bytes_and_ends_at_full() {
+        let dir = scratch("ok");
+        let data: Vec<u8> = (0..300_000u32).map(|i| (i % 251) as u8).collect();
+        let sha = format!("{:x}", sha2::Sha256::digest(&data));
+        let mut seen: Vec<(u64, u64)> = Vec::new();
+        let path = store_stream(
+            &dir, "photo.jpg", Some(&sha), data.as_slice(), data.len() as u64,
+            |w, t| seen.push((w, t)),
+        ).unwrap();
+        assert_eq!(path.file_name().unwrap(), "photo.jpg");
+        assert_eq!(std::fs::read(&path).unwrap(), data);
+        assert_eq!(*seen.last().unwrap(), (data.len() as u64, data.len() as u64));
+        assert!(leftovers(&dir).is_empty(), "temp file left behind");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 422 case: a wrong declared hash must NOT promote the temp file, and
+    /// Downloads must be left empty rather than holding an unverified photo.
+    #[test]
+    fn store_stream_refuses_checksum_mismatch_and_leaves_nothing() {
+        let dir = scratch("bad");
+        let data = b"lynko share sheet".repeat(64);
+        let err = store_stream(&dir, "photo.jpg", Some(&"0".repeat(64)),
+            data.as_slice(), data.len() as u64, |_, _| {}).unwrap_err();
+        assert_eq!(err, StoreError::Checksum);
+        assert_eq!(err.status(), 422);
+        let entries: Vec<_> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name()).collect();
+        assert!(entries.is_empty(), "mismatched upload left files: {entries:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A sender that dies mid-body must be reported as Aborted/400 and must
+    /// not leave a partial file that looks complete.
+    #[test]
+    fn store_stream_abort_removes_the_partial_file() {
+        let dir = scratch("abort");
+        let data = vec![7u8; 512 * 1024];
+        let mut r = std::io::Cursor::new(data);
+        // Hand out the first 100 KB, then fail like a dropped socket.
+        let mut flaky = FlakyReader { inner: &mut r, left: 100 * 1024 };
+        let err = store_stream(&dir, "movie.mp4", None, &mut flaky,
+            512 * 1024, |_, _| {}).unwrap_err();
+        assert_eq!(err, StoreError::Aborted);
+        assert_eq!(err.status(), 400);
+        assert!(leftovers(&dir).is_empty());
+        let entries: Vec<_> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name()).collect();
+        assert!(entries.is_empty(), "aborted upload left files: {entries:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Zero-byte transfer is rejected rather than creating an empty file.
+    #[test]
+    fn store_stream_rejects_empty_body() {
+        let dir = scratch("empty");
+        let err = store_stream(&dir, "note.txt", None, &b""[..], 0, |_, _| {}).unwrap_err();
+        assert_eq!(err, StoreError::Empty);
+        assert!(std::fs::read_dir(&dir).unwrap().next().is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Two transfers of the same name both survive, in picker order.
+    #[test]
+    fn store_stream_second_same_name_does_not_clobber_the_first() {
+        let dir = scratch("dup");
+        let a = store_stream(&dir, "doc.pdf", None, &b"first"[..], 5, |_, _| {}).unwrap();
+        let b = store_stream(&dir, "doc.pdf", None, &b"second"[..], 6, |_, _| {}).unwrap();
+        assert_eq!(std::fs::read(&a).unwrap(), b"first");
+        assert_eq!(std::fs::read(&b).unwrap(), b"second");
+        assert_eq!(b.file_name().unwrap(), "doc (2).pdf");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Reader that serves `left` bytes then fails, like a dropped connection.
+    struct FlakyReader<'a> {
+        inner: &'a mut std::io::Cursor<Vec<u8>>,
+        left: usize,
+    }
+    impl Read for FlakyReader<'_> {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            if self.left == 0 {
+                return Err(std::io::Error::new(std::io::ErrorKind::ConnectionReset, "peer gone"));
+            }
+            let want = buf.len().min(self.left);
+            let n = self.inner.read(&mut buf[..want])?;
+            self.left -= n;
+            Ok(n)
+        }
+    }
 }
 
