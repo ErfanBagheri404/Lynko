@@ -2,14 +2,16 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod adb;
+mod share_receive;
+mod transfer_receive;
 
 use futures_util::{SinkExt, StreamExt};
 use lynko_core::{
     Capabilities, Command, Event, PairRequest, PairResponse,
     LINK_PORT, PAIR_PORT, PROTOCOL_VERSION, SERVICE_TYPE,
 };
-/// HTTP port of the phone's LocalSend-style transfer server.
-const TRANSFER_PORT: u16 = 7914;
+/// HTTP port of the phone's LocalSend v2.2 transfer server.
+const TRANSFER_PORT: u16 = 53317;
 use sha2::Digest;
 
 /// Disk-file body stream with an exact size_hint. reqwest sends
@@ -80,6 +82,8 @@ struct Device {
     caps: Capabilities,
     paired: bool,
     online: bool,
+    #[serde(default)]
+    linked: bool,
 }
 
 /// Handle to the live control link (one phone at a time in v1).
@@ -104,26 +108,47 @@ struct LynkoState {
     /// stops as soon as it no longer matches — exactly one reconnect chain
     /// per device can ever be alive, no matter how many drops stack up.
     link_gen: AtomicU64,
+    /// User setting (Settings view): when false, a dropped link stays down
+    /// until the user reconnects manually. Gates spawn_reconnect.
+    auto_reconnect: AtomicBool,
+    /// Latest screen frame (raw JPEG bytes), served to the WebView over a
+    /// localhost HTTP endpoint. Tauri's asset protocol refused to serve
+    /// percent-encoded Windows temp paths, and base64-in-JSON events
+    /// bottlenecked at ~6fps; an in-memory HTTP endpoint lets Chromium load
+    /// frames natively with zero serialization.
+    latest_frame: Mutex<Vec<u8>>,
+    /// Bumped every time latest_frame changes, so the frontend can skip
+    /// re-fetching an identical frame.
+    frame_seq: AtomicU64,
 }
 
 impl LynkoState {
     fn merged(&self) -> Vec<Device> {
-        let disc = self.discovered.lock().unwrap();
-        let paired = self.paired.lock().unwrap();
-        let mut out: HashMap<String, Device> = paired
-            .iter()
-            .map(|(k, d)| (k.clone(), Device { online: false, ..d.clone() }))
-            .collect();
-        for (k, d) in disc.iter() {
-            let mut d = d.clone();
-            if let Some(p) = paired.get(k) {
-                d.paired = true;
-                d.caps = p.caps.clone();
-            }
-            out.insert(k.clone(), d);
-        }
-        out.into_values().collect()
-    }
+          let disc = self.discovered.lock().unwrap();
+          let paired = self.paired.lock().unwrap();
+          let link_id = self.link.lock().unwrap().as_ref().map(|h| h.device_id.clone());
+          let mut out: HashMap<String, Device> = paired
+              .iter()
+              .map(|(k, d)| (k.clone(), Device { online: false, ..d.clone() }))
+              .collect();
+          for (k, d) in disc.iter() {
+              let mut d = d.clone();
+              if let Some(p) = paired.get(k) {
+                  d.paired = true;
+                  d.caps = p.caps.clone();
+              }
+              out.insert(k.clone(), d);
+          }
+          // The live-linked device is the one the desktop is talking to right
+          // now — flag it so the UI can badge it instead of guessing from
+          // `online` (a phone can be online but not the active link target).
+          if let Some(id) = link_id {
+              if let Some(d) = out.get_mut(&id) {
+                  d.linked = true;
+              }
+          }
+          out.into_values().collect()
+      }
 
     fn emit_devices(&self) {
         if let Some(app) = self.app.lock().unwrap().as_ref() {
@@ -156,6 +181,7 @@ fn usb_device_entry(serial: &str, model: &str) -> Device {
         },
         paired: false,
         online: true,
+        linked: false,
     }
 }
 
@@ -291,14 +317,16 @@ fn start_discovery(app: AppHandle) {
                         .or_else(|| addrs.first())
                         .map(|ip| ip.to_string())
                         .unwrap_or_else(|| "unknown".into());
+                    // Phone advertises "cap" (and legacy "caps") — read either.
                     let caps = info
                         .get_property("cap")
+                        .or_else(|| info.get_property("caps"))
                         .map(|p| Capabilities::from_txt(p.val_str()))
                         .unwrap_or_default();
                     let id = info.get_fullname().to_string();
                     state.discovered.lock().unwrap().insert(
                         id.clone(),
-                        Device { id, name, address, caps, paired: false, online: true },
+                        Device { id, name, address, caps, paired: false, online: true, linked: false },
                     );
                     state.emit_devices();
                 }
@@ -329,6 +357,23 @@ fn ws_host(address: &str) -> String {
 
 fn host_url(address: &str, port: u16, path: &str) -> String {
     format!("http://{}:{}{}", ws_host(address), port, path)
+}
+
+// A USB cable only proves ADB is reachable, not that Lynko has started.
+async fn pairing_service_ready(address: &str) -> bool {
+    let Ok(client) = reqwest::Client::builder().no_proxy().timeout(Duration::from_secs(2)).build() else { return false; };
+    // GET carries no PIN and cannot approve pairing. The existing server
+    // responds with its typed rejection, proving the pairing handler is live.
+    let Ok(response) = client.get(host_url(address, PAIR_PORT, "/pair")).send().await else { return false; };
+    if !response.status().is_success() { return false; }
+    let Ok(body) = response.json::<serde_json::Value>().await else { return false; };
+    body["ok"] == false && body["error"] == "bad pin"
+}
+
+#[tauri::command]
+async fn check_pairing_ready(state: State<'_, LynkoState>, device_id: String) -> Result<bool, String> {
+    let device = state.discovered.lock().unwrap().get(&device_id).cloned().ok_or("Device disconnected")?;
+    Ok(pairing_service_ready(&device.address).await)
 }
 
 #[tauri::command]
@@ -378,9 +423,14 @@ async fn pair_device(
 fn forget_device(state: State<'_, LynkoState>, device_id: String) -> Result<(), String> {
     let app = state.app.lock().unwrap().clone().ok_or("app not ready")?;
     { let mut paired = state.paired.lock().unwrap(); paired.remove(&device_id); save_pairs(&app, &paired); }
-    let mut link = state.link.lock().unwrap();
-    if let Some(l) = link.as_ref() {
-        if l.device_id == device_id { l.alive.store(false, Ordering::SeqCst); *link = None; }
+    // Drop the link lock BEFORE calling emit_devices — merged() re-locks it,
+    // so holding it here deadlocks the entire UI (Tauri command thread hangs,
+    // WebView freezes, app shows "Not Responding").
+    {
+        let mut link = state.link.lock().unwrap();
+        if let Some(l) = link.as_ref() {
+            if l.device_id == device_id { l.alive.store(false, Ordering::SeqCst); *link = None; }
+        }
     }
     state.emit_devices();
     Ok(())
@@ -410,7 +460,7 @@ fn connect_inner(state: &LynkoState, device_id: &str) -> Result<(), String> {
     }
 
     let app = state.app.lock().unwrap().clone().ok_or("app not ready")?;
-    let (tx, rx) = tokio_mpsc::channel::<Message>(64);
+    let (tx, rx) = tokio_mpsc::channel::<Message>(512);
     let alive = Arc::new(AtomicBool::new(true));
 
     { let mut link = state.link.lock().unwrap(); *link = Some(LinkHandle { device_id: device.id.clone(), device_name: device.name.clone(), device_address: device.address.clone(), tx: tx.clone(), alive: alive.clone() }); }
@@ -449,6 +499,7 @@ async fn run_link(
 
     let _ = app.emit("link_state", serde_json::json!({ "connected": true, "device_id": &device.id }));
     let _ = app.emit("log", serde_json::json!({ "msg": format!("link UP to {}", device.name) }));
+    app.state::<LynkoState>().emit_devices();
 
     let (mut ws_sink, mut ws_src) = ws_stream.split();
 
@@ -470,6 +521,15 @@ async fn run_link(
     while alive.load(Ordering::SeqCst) {
         match tokio::time::timeout(Duration::from_secs(30), ws_src.next()).await {
             Ok(Some(Ok(Message::Text(txt)))) => {
+                share_receive::expire(&app,gen);
+                if txt.len() <= 70000 {
+                    if let Ok(v)=serde_json::from_str::<serde_json::Value>(&txt) {
+                        if let Some(t)=v.get("t").and_then(|v|v.as_str()).filter(|t|t.starts_with("share_")) {
+                            share_receive::handle(&app,&_tx,gen,t,&v["d"]);
+                            continue;
+                        }
+                    }
+                }
                 if let Ok(ev) = serde_json::from_str::<Event>(&txt) {
                     let _ = app.emit("link_event", &ev);
                 }
@@ -481,14 +541,14 @@ async fn run_link(
                         let _ = app.emit("file_chunk", serde_json::json!({ "id": &id, "len": data.len() }));
                     }
                     _ => {
-                        // Screen frame (b"LV1" + raw JPEG bytes): forward JPEG to canvas.
+                        // Screen frame (b"LV1" + raw JPEG bytes): stash the JPEG
+                        // in memory and bump the sequence. The WebView loads it
+                        // from the localhost frame server below — no base64, no
+                        // JSON, no asset-protocol scope to fight.
                         if bin.len() > 3 && &bin[..3] == lynko_core::FRAME_MAGIC {
-                            use base64::Engine;
-                            use tauri::Manager;
-                            if let Some(win) = app.get_webview_window("main") {
-                                let _ = win.emit("screen_frame", serde_json::json!({
-                                    "jpeg": base64::engine::general_purpose::STANDARD.encode(&bin[3..]),
-                                }));
+                            if let Some(st) = app.try_state::<LynkoState>() {
+                                *st.latest_frame.lock().unwrap() = bin[3..].to_vec();
+                                st.frame_seq.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                             }
                         }
                         // Audio chunk (b"LF1" + header + PCM i16 LE): forward PCM to player.
@@ -511,6 +571,7 @@ async fn run_link(
         }
     }
 
+    share_receive::clear(gen);
     alive.store(false, Ordering::SeqCst);
     let _ = app.emit("link_state", serde_json::json!({ "connected": false }));
     let _ = app.emit("log", serde_json::json!({ "msg": "link dropped" }));
@@ -533,9 +594,17 @@ async fn run_link(
 
 /// Backoff-reconnect loop for a dropped link. Stops when a fresh link takes
 /// over (connect_inner replaces the handle) or the device is forgotten.
+/// Honors the Settings → auto-reconnect toggle.
 fn spawn_reconnect(app: AppHandle, device_id: String, gen: u64) {
+    if !app.state::<LynkoState>().auto_reconnect.load(Ordering::SeqCst) {
+        let _ = app.emit("log", serde_json::json!({ "msg": "link dropped (auto-reconnect off)" }));
+        return;
+    }
     tauri::async_runtime::spawn(async move {
-        let mut delay = Duration::from_secs(1);
+        // First attempt fires immediately: the phone's link server is still
+        // alive (VpnGuard doesn't restart it), so the TCP reconnect should
+        // succeed on first try. Only fall back to backoff on repeated failure.
+        let mut delay = Duration::ZERO;
         loop {
             tokio::time::sleep(delay).await;
             // Stop if a new connection replaced us or the device was forgotten.
@@ -552,7 +621,9 @@ fn spawn_reconnect(app: AppHandle, device_id: String, gen: u64) {
             let state = app.state::<LynkoState>();
             match connect_inner(&state, &device_id) {
                 Ok(()) => return,
-                Err(_) => { delay = std::cmp::min(delay * 2, Duration::from_secs(15)); }
+                // First retry is immediate (delay starts ZERO); after the
+                // first failure jump to 1s, then exponential to 15s cap.
+                Err(_) => { delay = if delay.is_zero() { Duration::from_secs(1) } else { std::cmp::min(delay * 2, Duration::from_secs(15)) }; }
             }
         }
     });
@@ -571,6 +642,32 @@ fn disconnect(state: State<'_, LynkoState>) -> Result<(), String> {
         let _ = app.emit("link_state", serde_json::json!({ "connected": false }));
     }
     Ok(())
+}
+
+/// Settings → auto-reconnect toggle (real, not decorative): false means a
+/// dropped link stays down until the user reconnects manually.
+#[tauri::command]
+fn set_auto_reconnect(state: State<'_, LynkoState>, on: bool) -> Result<(), String> {
+    state.auto_reconnect.store(on, Ordering::SeqCst);
+    Ok(())
+}
+
+/// Async variant for high-rate commands (drag moves). Waits for channel
+/// space instead of try_send silently dropping on Full — a dropped move is
+/// an invisible dead swipe; a timed-out one is a visible error.
+async fn send_cmd_a(state: State<'_, LynkoState>, cmd: &Command) -> Result<(), String> {
+    let (tx, alive) = {
+        let link = state.link.lock().unwrap();
+        let l = link.as_ref().ok_or("no phone connected")?;
+        (l.tx.clone(), l.alive.clone())
+    };
+    if !alive.load(Ordering::SeqCst) { return Err("link is down".into()); }
+    let json = serde_json::to_string(cmd).map_err(|e| e.to_string())?;
+    match tokio::time::timeout(Duration::from_millis(400), tx.send(Message::text(json))).await {
+        Ok(Ok(_)) => Ok(()),
+        Ok(Err(e)) => Err(format!("send closed: {e}")),
+        Err(_) => Err("send backpressure timeout".into()),
+    }
 }
 
 /// Send a JSON command over the link.
@@ -637,18 +734,18 @@ fn inject_swipe(state: State<'_, LynkoState>, x1: f32, y1: f32, x2: f32, y2: f32
 }
 
 #[tauri::command]
-fn inject_drag_start(state: State<'_, LynkoState>, x: f32, y: f32) -> Result<(), String> {
-    send_cmd(&state, &Command::DragStart { x, y })
+async fn inject_drag_start(state: State<'_, LynkoState>, x: f32, y: f32, dt: Option<u32>) -> Result<(), String> {
+    send_cmd_a(state, &Command::DragStart { x, y, dt: dt.unwrap_or(0) }).await
 }
 
 #[tauri::command]
-fn inject_drag_move(state: State<'_, LynkoState>, x: f32, y: f32) -> Result<(), String> {
-    send_cmd(&state, &Command::DragMove { x, y })
+async fn inject_drag_move(state: State<'_, LynkoState>, x: f32, y: f32, dt: Option<u32>) -> Result<(), String> {
+    send_cmd_a(state, &Command::DragMove { x, y, dt: dt.unwrap_or(0) }).await
 }
 
 #[tauri::command]
-fn inject_drag_end(state: State<'_, LynkoState>, x: f32, y: f32) -> Result<(), String> {
-    send_cmd(&state, &Command::DragEnd { x, y })
+async fn inject_drag_end(state: State<'_, LynkoState>, x: f32, y: f32, dt: Option<u32>) -> Result<(), String> {
+    send_cmd_a(state, &Command::DragEnd { x, y, dt: dt.unwrap_or(0) }).await
 }
 
 #[tauri::command]
@@ -668,15 +765,107 @@ fn send_signal(state: State<'_, LynkoState>, payload: serde_json::Value) -> Resu
 }
 
 #[tauri::command]
-fn send_file(state: State<'_, LynkoState>, path: String) -> Result<String, String> {
-    send_files_v2(state, vec![path])
+fn send_file(state: State<'_, LynkoState>, path: String, request_id: Option<String>) -> Result<String, String> {
+    send_files_v2(state, vec![path], request_id)
+}
+
+/// Stable per-install identity (LocalSend "fingerprint": random string when
+/// encryption is off — here derived from the machine name so two desktop
+/// instances on one box are still distinguishable from a phone).
+fn state_fingerprint(_state: &State<'_, LynkoState>) -> String {
+    let host = std::env::var("COMPUTERNAME")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .or_else(|| std::env::var("HOSTNAME").ok().filter(|s| !s.is_empty()))
+        .unwrap_or_else(|| "lynko-desktop".into());
+    format!("lynko-{}", host.to_lowercase())
+}
+
+/// LocalSend `fileType` is a MIME type (spec 4.1), not the v1 category enum.
+fn mime_of(name: &str) -> &'static str {
+    let ext = std::path::Path::new(name)
+        .extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "svg" => "image/svg+xml",
+        "bmp" => "image/bmp",
+        "heic" => "image/heic",
+        "mp4" => "video/mp4",
+        "mkv" => "video/x-matroska",
+        "webm" => "video/webm",
+        "mov" => "video/quicktime",
+        "avi" => "video/x-msvideo",
+        "mp3" => "audio/mpeg",
+        "m4a" => "audio/mp4",
+        "wav" => "audio/wav",
+        "ogg" => "audio/ogg",
+        "flac" => "audio/flac",
+        "pdf" => "application/pdf",
+        "zip" => "application/zip",
+        "gz" | "tgz" => "application/gzip",
+        "7z" => "application/x-7z-compressed",
+        "rar" => "application/vnd.rar",
+        "tar" => "application/x-tar",
+        "apk" => "application/vnd.android.package-archive",
+        "exe" | "msi" => "application/vnd.microsoft.portable-executable",
+        "doc" => "application/msword",
+        "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "xls" => "application/vnd.ms-excel",
+        "xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "ppt" => "application/vnd.ms-powerpoint",
+        "pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "txt" | "log" | "md" => "text/plain",
+        "json" => "application/json",
+        "xml" => "application/xml",
+        "csv" => "text/csv",
+        "html" | "htm" => "text/html",
+        "css" => "text/css",
+        "js" => "text/javascript",
+        _ => "application/octet-stream",
+    }
+}
+
+/// Spec 4.1 `metadata.modified`: ISO-8601 UTC (e.g. 2021-01-01T12:34:56Z).
+fn modified_of(path: &str) -> String {
+    let t = std::fs::metadata(path).and_then(|m| m.modified()).ok();
+    match t {
+        Some(time) => {
+            let secs = time
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            // Days since epoch -> civil date (Howard Hinnant's algorithm).
+            let days = (secs / 86_400) as i64;
+            let rem = (secs % 86_400) as u32;
+            let z = days + 719_468;
+            let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+            let doe = (z - era * 146_097) as i64;
+            let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+            let y = yoe + era * 400;
+            let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+            let mp = (5 * doy + 2) / 153;
+            let d = doy - (153 * mp + 2) / 5 + 1;
+            let m = if mp < 10 { mp + 3 } else { mp - 9 };
+            let year = if m <= 2 { y + 1 } else { y };
+            format!(
+                "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+                year, m, d, rem / 3600, (rem % 3600) / 60, rem % 60
+            )
+        }
+        None => String::new(),
+    }
 }
 
 /// LocalSend-style session file push (Apache-2.0, localsend.org):
 /// POST /api/lynko/v2/prepare-upload with a sha256 manifest → phone consents
 /// → POST /api/lynko/v2/upload?sessionId&fileId per file → cancel on abort.
 #[tauri::command]
-fn send_files_v2(state: State<'_, LynkoState>, paths: Vec<String>) -> Result<String, String> {
+fn send_files_v2(state: State<'_, LynkoState>, paths: Vec<String>, request_id: Option<String>) -> Result<String, String> {
     let (addr, device_name, app) = {
         let link = state.link.lock().unwrap();
         let l = link.as_ref().ok_or("no phone connected")?;
@@ -696,22 +885,37 @@ fn send_files_v2(state: State<'_, LynkoState>, paths: Vec<String>) -> Result<Str
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| "file.bin".into());
-        let id = uuid::Uuid::new_v4().to_string();
+        let id = if paths.len() == 1 { request_id.clone().unwrap_or_else(|| uuid::Uuid::new_v4().to_string()) } else { uuid::Uuid::new_v4().to_string() };
         // hash while we still have the file open, then reopen for upload
         let mut hasher = sha2::Sha256::new();
         std::io::copy(&mut f, &mut hasher).map_err(|e| e.to_string())?;
         let sha256 = format!("{:x}", hasher.finalize());
         manifest_files.push(serde_json::json!({
-            "id": id, "fileName": name, "size": size, "sha256": sha256,
+            "id": id, "fileName": name, "size": size,
+            "fileType": mime_of(&name), "sha256": sha256,
+            "metadata": { "modified": modified_of(p) },
         }));
         metas.push((id, name, size, p.clone()));
     }
 
+    // Exact LocalSend v2.2 prepare-upload body: info + files keyed by file id.
+    let mut files_map = serde_json::Map::new();
+    for f in &manifest_files {
+        let id = f["id"].as_str().unwrap_or("").to_string();
+        files_map.insert(id, f.clone());
+    }
     let manifest = serde_json::json!({
-        "sessionId": session_id,
-        "sender": { "alias": whoami::fallible::username().unwrap_or_else(|_| "Desktop".into()),
-            "deviceModel": "PC" },
-        "files": manifest_files,
+        "info": {
+            "alias": whoami::fallible::username().unwrap_or_else(|_| "Desktop".into()),
+            "version": "2.2",
+            "deviceModel": "PC",
+            "deviceType": "desktop",
+            "fingerprint": state_fingerprint(&state),
+            "port": TRANSFER_PORT,
+            "protocol": "http",
+            "download": false,
+        },
+        "files": files_map,
     });
 
     let _ = app.emit("log", serde_json::json!({ "msg": format!("transfer: asking {device_name} to accept {} file(s)", metas.len()) }));
@@ -725,26 +929,77 @@ fn send_files_v2(state: State<'_, LynkoState>, paths: Vec<String>) -> Result<Str
 
         // 1) prepare-upload — blocks until the user answers on the phone.
         let prep: serde_json::Value = match client
-            .post(format!("{base}/api/lynko/v2/prepare-upload"))
+            .post(format!("{base}/api/localsend/v2/prepare-upload"))
             .json(&manifest)
             .send()
             .await
         {
             Ok(r) if r.status().as_u16() == 200 => match r.json().await {
                 Ok(v) => v,
-                Err(e) => { let _ = app.emit("log", serde_json::json!({ "msg": format!("transfer: bad manifest reply: {e}") })); return; }
+                Err(e) => {
+                    let _ = app.emit("log", serde_json::json!({ "msg": format!("transfer: bad manifest reply: {e}") }));
+                    for (id, name, _, _) in &metas {
+                        let _ = app.emit("file_done", serde_json::json!({ "id": id, "name": name, "ok": false, "error": "bad reply" }));
+                    }
+                    return;
+                }
             },
             Ok(r) if r.status().as_u16() == 403 => {
                 let _ = app.emit("log", serde_json::json!({ "msg": "transfer declined on the phone" }));
-                for (id, _, _, _) in &metas {
-                    let _ = app.emit("file_done", serde_json::json!({ "id": id, "ok": false, "error": "declined" }));
+                for (id, name, _, _) in &metas {
+                    let _ = app.emit("file_done", serde_json::json!({ "id": id, "name": name, "ok": false, "error": "declined on phone" }));
                 }
                 return;
             }
-            Ok(r) => { let _ = app.emit("log", serde_json::json!({ "msg": format!("transfer: prepare failed: {}", r.status()) })); return; }
-            Err(e) => { let _ = app.emit("log", serde_json::json!({ "msg": format!("transfer: unreachable: {e}") })); return; }
+            // Spec 4.1: 401 PIN required/invalid, 409 blocked by another session,
+            // 204 finished (no transfer needed), 422 checksum mismatch.
+            Ok(r) if r.status().as_u16() == 401 => {
+                let _ = app.emit("log", serde_json::json!({ "msg": "transfer: phone requires a PIN" }));
+                for (id, name, _, _) in &metas {
+                    let _ = app.emit("file_done", serde_json::json!({ "id": id, "name": name, "ok": false, "error": "PIN required" }));
+                }
+                return;
+            }
+            Ok(r) if r.status().as_u16() == 409 => {
+                let _ = app.emit("log", serde_json::json!({ "msg": "transfer: phone is busy with another session" }));
+                for (id, name, _, _) in &metas {
+                    let _ = app.emit("file_done", serde_json::json!({ "id": id, "name": name, "ok": false, "error": "phone busy" }));
+                }
+                return;
+            }
+            Ok(r) if r.status().as_u16() == 204 => {
+                let _ = app.emit("log", serde_json::json!({ "msg": "transfer: nothing to send" }));
+                for (id, name, _, _) in &metas {
+                    let _ = app.emit("file_done", serde_json::json!({ "id": id, "name": name, "ok": true }));
+                }
+                return;
+            }
+            Ok(r) => {
+                let _ = app.emit("log", serde_json::json!({ "msg": format!("transfer: prepare failed: {}", r.status()) }));
+                for (id, name, _, _) in &metas {
+                    let _ = app.emit("file_done", serde_json::json!({ "id": id, "name": name, "ok": false, "error": format!("phone: {}", r.status()) }));
+                }
+                return;
+            }
+            Err(e) => {
+                let _ = app.emit("log", serde_json::json!({ "msg": format!("transfer: unreachable: {e}") }));
+                for (id, name, _, _) in &metas {
+                    let _ = app.emit("file_done", serde_json::json!({ "id": id, "name": name, "ok": false, "error": "phone unreachable" }));
+                }
+                return;
+            }
         };
         let _ = prep;
+        // Spec 4.1 reply: {"sessionId": "...", "files": {"<fileId>": "<token>"}}
+        let remote_session = prep["sessionId"].as_str().unwrap_or("").to_string();
+        let tokens = prep["files"].clone();
+        if remote_session.is_empty() {
+            let _ = app.emit("log", serde_json::json!({ "msg": "transfer: phone returned no sessionId" }));
+            for (id, name, _, _) in &metas {
+                let _ = app.emit("file_done", serde_json::json!({ "id": id, "name": name, "ok": false, "error": "no session" }));
+            }
+            return;
+        }
 
         // 2) upload each file's raw bytes, streaming for incremental progress
         for (id, name, size, p) in &metas {
@@ -752,10 +1007,11 @@ fn send_files_v2(state: State<'_, LynkoState>, paths: Vec<String>) -> Result<Str
             let name = name.clone();
             let size = *size;
             let p = p.clone();
+            let token = tokens[id.as_str()].as_str().unwrap_or("").to_string();
             let file = match std::fs::File::open(&p) {
                 Ok(f) => f,
                 Err(e) => {
-                    let _ = app.emit("file_done", serde_json::json!({ "id": id, "ok": false, "error": format!("read: {e}") }));
+                    let _ = app.emit("file_done", serde_json::json!({ "id": id, "name": name, "ok": false, "error": format!("read: {e}") }));
                     continue;
                 }
             };
@@ -767,20 +1023,31 @@ fn send_files_v2(state: State<'_, LynkoState>, paths: Vec<String>) -> Result<Str
                 name: name.clone(),
                 app: app.clone(),
             };
-            let url = format!("{base}/api/lynko/v2/upload?sessionId={session_id}&fileId={id}");
+            let url = format!("{base}/api/localsend/v2/upload?sessionId={remote_session}&fileId={id}&token={token}");
             match client.post(url).body(reqwest::Body::wrap_stream(stream)).send().await {
                 Ok(r) if r.status().as_u16() == 200 => {
-                    let _ = app.emit("file_progress", serde_json::json!({ "id": id, "name": name, "written": size, "total": size }));
-                    let _ = app.emit("file_done", serde_json::json!({ "id": id, "ok": true }));
+                    let _ = app.emit("file_done", serde_json::json!({ "id": id, "name": name, "ok": true }));
+                }
+                // Spec 4.2: 422 = checksum mismatch (sha256).
+                Ok(r) if r.status().as_u16() == 422 => {
+                    let _ = app.emit("file_done", serde_json::json!({ "id": id, "name": name, "ok": false, "error": "checksum mismatch" }));
+                    let _ = client.post(format!("{base}/api/localsend/v2/cancel?sessionId={remote_session}")).send().await;
+                    return;
+                }
+                // Spec 4.2: 403 = invalid token or IP address.
+                Ok(r) if r.status().as_u16() == 403 => {
+                    let _ = app.emit("file_done", serde_json::json!({ "id": id, "name": name, "ok": false, "error": "invalid token" }));
+                    let _ = client.post(format!("{base}/api/localsend/v2/cancel?sessionId={remote_session}")).send().await;
+                    return;
                 }
                 Ok(r) => {
-                    let _ = app.emit("file_done", serde_json::json!({ "id": id, "ok": false, "error": format!("upload: {}", r.status()) }));
-                    let _ = client.post(format!("{base}/api/lynko/v2/cancel?sessionId={session_id}")).send().await;
+                    let _ = app.emit("file_done", serde_json::json!({ "id": id, "name": name, "ok": false, "error": format!("upload: {}", r.status()) }));
+                    let _ = client.post(format!("{base}/api/localsend/v2/cancel?sessionId={remote_session}")).send().await;
                     return;
                 }
                 Err(e) => {
-                    let _ = app.emit("file_done", serde_json::json!({ "id": id, "ok": false, "error": format!("upload: {e}") }));
-                    let _ = client.post(format!("{base}/api/lynko/v2/cancel?sessionId={session_id}")).send().await;
+                    let _ = app.emit("file_done", serde_json::json!({ "id": id, "name": name, "ok": false, "error": format!("upload: {e}") }));
+                    let _ = client.post(format!("{base}/api/localsend/v2/cancel?sessionId={remote_session}")).send().await;
                     return;
                 }
             }
@@ -834,6 +1101,100 @@ fn get_pc_clipboard(app: tauri::AppHandle) -> Result<String, String> {
     app.clipboard().read_text().map_err(|e| e.to_string())
 }
 
+/* ------------------------------------------------------------------ */
+/* frame server                                                        */
+/* ------------------------------------------------------------------ */
+
+/// Serves the newest screen frame as JPEG over http://127.0.0.1:7919/frame.jpg.
+///
+/// Why: the old path base64-encoded every frame into a Tauri event (+33%
+/// inflation, JSON serialization, ~6fps ceiling), and Tauri's asset protocol
+/// refused percent-encoded Windows temp paths outright (broken-image icon).
+/// Chromium loads an <img> from localhost natively — no serialization at all,
+/// and because only the latest frame is held, a slow renderer can never build
+/// up a backlog of stale frames.
+fn start_frame_server(app: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        let server = match tiny_http::Server::http("127.0.0.1:7919") {
+            Ok(s) => s,
+            Err(e) => {
+                let _ = app.emit("log", serde_json::json!({ "msg": format!("frame server failed to bind: {e}") }));
+                return;
+            }
+        };
+        let _ = app.emit("log", serde_json::json!({ "msg": "frame server on http://127.0.0.1:7919/frame.jpg" }));
+        for req in server.incoming_requests() {
+            // Any path serves the newest frame; the frontend only ever asks
+            // for /frame.jpg but tolerating anything avoids 404 noise.
+            let (bytes, seq) = {
+                let st = match app.try_state::<LynkoState>() {
+                    Some(st) => st,
+                    None => continue,
+                };
+                let b = st.latest_frame.lock().unwrap().clone();
+                let s = st.frame_seq.load(std::sync::atomic::Ordering::Relaxed);
+                (b, s)
+            };
+            let header = tiny_http::Header::from_bytes(
+                &b"Content-Type"[..],
+                &b"image/jpeg"[..],
+            )
+            .unwrap();
+            let seq_header = tiny_http::Header::from_bytes(
+                &b"X-Frame-Seq"[..],
+                seq.to_string().as_bytes(),
+            )
+            .unwrap();
+            let no_store = tiny_http::Header::from_bytes(
+                &b"Cache-Control"[..],
+                &b"no-store"[..],
+            )
+            .unwrap();
+            // CORS: the WebView origin (tauri://localhost / http://tauri.localhost)
+            // is NOT same-origin with 127.0.0.1:7919 — without this header the
+            // browser blocks reading the fetch() response and the mirror stays
+            // stuck on "waiting for frames". GET + no custom headers = simple
+            // request, so no OPTIONS preflight handling is needed.
+            let cors = tiny_http::Header::from_bytes(
+                &b"Access-Control-Allow-Origin"[..],
+                &b"*"[..],
+            )
+            .unwrap();
+            // X-Frame-Seq is the frame's version token — the poll loop compares
+            // it to skip redundant repaints. It is NOT on the CORS safelist
+            // (only Cache-Control/Content-Language/Content-Length/Content-Type/
+            // Expires/Last-Modified/Pragma are), so a cross-origin fetch reads
+            // it back as null. Without exposing it the comparison is always
+            // -1 === -1, the loop never paints, and the mirror sits on
+            // "waiting for frames" while JPEGs pile up behind it.
+            let expose = tiny_http::Header::from_bytes(
+                &b"Access-Control-Expose-Headers"[..],
+                &b"X-Frame-Seq"[..],
+            )
+            .unwrap();
+            let resp = tiny_http::Response::from_data(bytes)
+                .with_header(header)
+                .with_header(seq_header)
+                .with_header(no_store)
+                .with_header(cors)
+                .with_header(expose);
+            let _ = req.respond(resp);
+        }
+    });
+}
+
+/// Transfer PIN (LocalSend spec `?pin=` on prepare calls), set from Settings.
+/// None = transfers need no PIN.
+fn pin() -> Option<String> {
+    PIN.get_or_init(|| Mutex::new(None))
+        .lock()
+        .unwrap()
+        .clone()
+        .filter(|p| !p.is_empty())
+}
+
+static PIN: std::sync::OnceLock<Mutex<Option<String>>> = std::sync::OnceLock::new();
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -848,12 +1209,18 @@ fn main() {
                 link: Mutex::new(None),
                 app: Mutex::new(Some(handle.clone())),
                 link_gen: AtomicU64::new(0),
+                auto_reconnect: AtomicBool::new(true),
+                latest_frame: Mutex::new(Vec::new()),
+                frame_seq: AtomicU64::new(0),
             });
             start_discovery(handle.clone());
             start_usb_watch(handle.clone());
+            start_frame_server(handle.clone());
+            transfer_receive::start(handle.clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            share_receive::answer_share, check_pairing_ready,
             protocol_info,
             list_devices,
             desktop_name,
@@ -861,6 +1228,7 @@ fn main() {
             forget_device,
             connect,
             disconnect,
+            set_auto_reconnect,
             send_copy,
             notif_reply,
             request_paste,
@@ -879,6 +1247,8 @@ fn main() {
             send_signal,
             send_file,
             send_files_v2,
+            transfer_receive::answer_transfer,
+            transfer_receive::set_transfer_pin,
             set_pc_clipboard,
             get_pc_clipboard
         ])

@@ -9,13 +9,18 @@ object LinkNotifier {
 
     fun push(pkg: String, title: String, text: String, notifId: Int = 0) {
         val send = broadcaster.get() ?: return
-        val json = JSONObject()
-            .put("t", "notification")
-            .put("d", JSONObject()
-                .put("app", pkg)
-                .put("title", title)
-                .put("body", text)
-                .put("notifId", notifId))
-        send(json.toString())
+        // Called from the notification listener thread — a send on a socket
+        // closing underneath throws and kills the process (and the
+        // accessibility service with it). Swallow: the notification is gone.
+        val json = try {
+            JSONObject()
+                .put("t", "notification")
+                .put("d", JSONObject()
+                    .put("app", pkg)
+                    .put("title", title)
+                    .put("body", text)
+                    .put("notifId", notifId))
+        } catch (_: Exception) { return }
+        try { send(json.toString()) } catch (_: Exception) {}
     }
 }

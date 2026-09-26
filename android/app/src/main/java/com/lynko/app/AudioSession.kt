@@ -59,7 +59,7 @@ class AudioSession(
             Log.e(TAG, "AudioRecord init failed: $state")
             record?.release()
             record = null
-            return
+            throw IllegalStateException("Audio playback capture could not initialize")
         }
 
         capturing = true

@@ -21,11 +21,10 @@ object ScreenPermission {
     }
 
     fun requestFromService(context: Context) {
-        val mpm = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        val i = mpm.createScreenCaptureIntent().apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        context.startActivity(i)
+        context.startActivity(Intent(context, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            putExtra("request_mirror_consent", true)
+        })
     }
 
     fun onResult(requestCode: Int, code: Int, data: Intent?) {
