@@ -10,7 +10,8 @@
 
 use futures_util::{SinkExt, StreamExt};
 use lynko_core::{
-    decode_frame, encode_chunk, Capabilities, Command, DecodedFrame, Event, PairRequest,
+    decode_frame, encode_audio, encode_chunk, Capabilities, Command, DecodedFrame, Event,
+    PairRequest,
     PairResponse, PAIR_PORT, PROTOCOL_VERSION, SERVICE_TYPE,
 };
 use mdns_sd::{ServiceDaemon, ServiceInfo};
@@ -119,6 +120,7 @@ fn run_pair_server(link_port: Arc<AtomicU64>) {
                                     device_name: "Pixel Sim (Lynko)".into(),
                                     capabilities: sim_caps(),
                                     link_port: link_port.load(Ordering::Relaxed) as u16,
+                                    transfer_port: 7914,
                                 }
                             } else {
                                 println!("sim: pair REJECTED (bad pin or version)");
@@ -128,6 +130,7 @@ fn run_pair_server(link_port: Arc<AtomicU64>) {
                                     device_name: "Pixel Sim (Lynko)".into(),
                                     capabilities: sim_caps(),
                                     link_port: link_port.load(Ordering::Relaxed) as u16,
+                                    transfer_port: 7914,
                                 }
                             }
                         }
@@ -137,6 +140,7 @@ fn run_pair_server(link_port: Arc<AtomicU64>) {
                             device_name: "Pixel Sim (Lynko)".into(),
                             capabilities: sim_caps(),
                             link_port: link_port.load(Ordering::Relaxed) as u16,
+                            transfer_port: 7914,
                         },
                     };
                     let payload = serde_json::to_vec(&resp).unwrap();
@@ -201,6 +205,31 @@ async fn handle_link(stream: tokio::net::TcpStream) {
         }
     });
 
+    // Audio stream (activated by StartAudio): real LA1 PCM frames at 16 kHz
+    // mono, 100 ms per frame, so e2e can prove the desktop actually decodes
+    // them as audio instead of swallowing them as file chunks.
+    let audio_on = Arc::new(AtomicU64::new(0));
+    let audio_flag = audio_on.clone();
+    let audio_tx = tx.clone();
+    tokio::spawn(async move {
+        let rate: u16 = 16_000;
+        let n: usize = (rate as usize) / 10; // 100 ms
+        let mut t: usize = 0;
+        loop {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            if audio_flag.load(Ordering::Relaxed) != 1 { continue; }
+            // 440 Hz sine so a listener can hear it is real audio, not silence.
+            let samples: Vec<i16> = (0..n)
+                .map(|i| {
+                    let p = 2.0 * std::f64::consts::PI * 440.0 * (t + i) as f64 / rate as f64;
+                    ((p.sin() * 12_000.0) as i16).clamp(-32_768, 32_767)
+                })
+                .collect();
+            t += n;
+            if audio_tx.send(Message::binary(encode_audio(rate, 1, &samples))).is_err() { break; }
+        }
+    });
+
     // battery + notification ticker
     tokio::spawn(async move {
         let mut pct: i8 = 78;
@@ -233,6 +262,7 @@ async fn handle_link(stream: tokio::net::TcpStream) {
                             app: apps[i].into(),
                             title: titles[i].into(),
                             body: bodies[i].into(),
+                            notif_id: 0,
                         })
                         .unwrap(),
                     ))
@@ -260,7 +290,7 @@ async fn handle_link(stream: tokio::net::TcpStream) {
                     Some(Ok(Message::Text(txt))) => {
                         match serde_json::from_str::<Command>(&txt) {
                             Ok(cmd) => {
-                                let reply = handle_command(cmd, &clip, &mut open_files, &streaming).await;
+                                let reply = handle_command(cmd, &clip, &mut open_files, &streaming, &audio_on).await;
                                 if let Some(ev) = reply {
                                     if sink.send(Message::text(serde_json::to_string(&ev).unwrap())).await.is_err() { break; }
                                 }
@@ -296,6 +326,7 @@ async fn handle_command(
     clip: &Arc<std::sync::Mutex<String>>,
     open_files: &mut HashMap<String, (std::fs::File, u64)>,
     streaming: &Arc<AtomicU64>,
+    audio_on: &Arc<AtomicU64>,
 ) -> Option<Event> {
     match cmd {
         Command::Copy { text } => {
@@ -319,8 +350,14 @@ async fn handle_command(
             streaming.store(0, Ordering::Relaxed);
             Some(Event::Log { msg: "screen stopped".into() })
         }
-        Command::StartAudio => Some(Event::Log { msg: "audio capture requested".into() }),
-        Command::StopAudio => Some(Event::Log { msg: "audio stopped".into() }),
+        Command::StartAudio => {
+            audio_on.store(1, Ordering::Relaxed);
+            Some(Event::Log { msg: "audio capture started (sim 440Hz tone)".into() })
+        }
+        Command::StopAudio => {
+            audio_on.store(0, Ordering::Relaxed);
+            Some(Event::Log { msg: "audio stopped".into() })
+        }
         Command::FileBegin { id, name, size } => {
             let chunks = size.div_ceil(lynko_core::FILE_CHUNK_SIZE as u64);
             println!("sim: file begin {name} ({size} bytes, ~{chunks} chunks) id={id}");
@@ -345,6 +382,30 @@ async fn handle_command(
         Command::Signal { payload } => {
             println!("sim: SIGNAL {:?}", payload);
             None
+        }
+        Command::FileEnd { id } => {
+            println!("sim: file end id={id}");
+            Some(Event::Log { msg: format!("received file id={id}") })
+        }
+        Command::DragStart { x, y, .. } => {
+            println!("sim: DRAGSTART ({x:.3},{y:.3})");
+            Some(Event::Log { msg: format!("drag start ({x:.2}, {y:.2})") })
+        }
+        Command::DragMove { x, y, .. } => {
+            println!("sim: DRAGMOVE ({x:.3},{y:.3})");
+            None
+        }
+        Command::DragEnd { x, y, .. } => {
+            println!("sim: DRAGEND ({x:.3},{y:.3})");
+            Some(Event::Log { msg: format!("drag end ({x:.2}, {y:.2})") })
+        }
+        Command::SetQuality { max_width, quality } => {
+            println!("sim: SETQUALITY max_width={max_width} quality={quality}");
+            Some(Event::Log { msg: format!("quality set ({}p, q{quality})", max_width) })
+        }
+        Command::NotifReply { app, notif_id, text } => {
+            println!("sim: NOTIFREPLY {app}#{notif_id} {:?}", text);
+            Some(Event::Log { msg: format!("notif reply {app}") })
         }
     }
     // encode_chunk is exercised by the desktop sender; sim just decodes.

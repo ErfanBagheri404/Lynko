@@ -10,8 +10,12 @@ import org.json.JSONObject
 
 /**
  * Captures audio playing on the phone via MediaProjection playback capture
- * (API 29+), downsamples to 16 kHz mono 16-bit PCM, then streams LF1 chunks:
- *   b"LF1" + u16 LE sample-rate + u16 LE channels + u32 LE sample-count + PCM bytes
+ * (API 29+), downsamples to 16 kHz mono 16-bit PCM, then streams LA1 chunks:
+ *   b"LA1" + u16 LE sample-rate + u16 LE channels + u32 LE sample-count + PCM bytes
+ *
+ * LA1, NOT LF1: LF1 is the file-chunk header (magic + id_len + id + data) and
+ * the desktop decodes that first, so an LF1-framed audio chunk was swallowed
+ * as a garbage file chunk and never played.
  */
 class AudioSession(
     private val projection: MediaProjection,
@@ -19,9 +23,9 @@ class AudioSession(
 ) {
     companion object {
         const val TAG = "lynko-audio"
-        const val CHUNK_MAGIC_0 = 0x4C // L
-        const val CHUNK_MAGIC_1 = 0x46 // F
-        const val CHUNK_MAGIC_2 = 0x31 // 1
+
+        /** `LA1` — audio magic. Distinct from `LF1` (file chunks), see class doc. */
+        val AUDIO_MAGIC = byteArrayOf(0x4C, 0x41, 0x31) // L A 1
     }
 
     private var record: AudioRecord? = null
@@ -59,7 +63,7 @@ class AudioSession(
             Log.e(TAG, "AudioRecord init failed: $state")
             record?.release()
             record = null
-            return
+            throw IllegalStateException("Audio playback capture could not initialize")
         }
 
         capturing = true
@@ -81,15 +85,13 @@ class AudioSession(
 
     private fun sendChunk(sampleRate: Int, channels: Int, sampleCount: Int, pcm: ByteArray) {
         val header = ByteArray(3 + 2 + 2 + 4)
-        header[0] = CHUNK_MAGIC_0.toByte()
-        header[1] = CHUNK_MAGIC_1.toByte()
-        header[2] = CHUNK_MAGIC_2.toByte()
+        System.arraycopy(AUDIO_MAGIC, 0, header, 0, 3)
         // u16 LE sample rate
         header[3] = (sampleRate and 0xFF).toByte()
         header[4] = ((sampleRate shr 8) and 0xFF).toByte()
         // u16 LE channels
         header[5] = (channels and 0xFF).toByte()
-        header[6] = 0
+        header[6] = ((channels shr 8) and 0xFF).toByte()
         // u32 LE sample count
         header[7] = (sampleCount and 0xFF).toByte()
         header[8] = ((sampleCount shr 8) and 0xFF).toByte()

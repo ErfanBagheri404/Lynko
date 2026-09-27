@@ -114,3 +114,50 @@ export const IconSend = ic(
     <path d="M11.5 13.5L20 4" />
   </>
 );
+
+/* --- screen rail controls --- */
+
+export const IconPlay = ic(
+  <path d="M7.5 4.8L19 12 7.5 19.2z" />
+);
+
+export const IconStop = ic(
+  <rect x="6" y="6" width="12" height="12" rx="1" />
+);
+
+export const IconBack = ic(
+  <>
+    <path d="M19 12H5.5" />
+    <path d="M11.5 5.5L5 12l6.5 6.5" />
+  </>
+);
+
+export const IconHome = ic(
+  <>
+    <path d="M4 11.5L12 4l8 7.5" />
+    <path d="M6.5 10v10h11V10" />
+  </>
+);
+
+export const IconRecents = ic(
+  <>
+    <rect x="3.5" y="3.5" width="10" height="10" rx="2" />
+    <rect x="8.5" y="8.5" width="12" height="12" rx="2" />
+  </>
+);
+
+export const IconRotate = ic(
+  <>
+    <path d="M21.5 4v5.5H16" />
+    <path d="M20 15.5a8.5 8.5 0 1 1-2-8.7l3.5 2.7" />
+  </>
+);
+
+export const IconExpand = ic(
+  <>
+    <path d="M4 9.5V4h5.5" />
+    <path d="M20 14.5V20h-5.5" />
+    <path d="M14.5 4H20v5.5" />
+    <path d="M9.5 20H4v-5.5" />
+  </>
+);

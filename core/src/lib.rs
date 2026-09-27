@@ -152,17 +152,27 @@ pub enum Command {
     },
     /// Live-drag segments (stroke continuation): first segment starts the
     /// pointer down, `false` segments continue it, the last `true` one lifts.
+    /// `dt` = real pointer-sample gaps in ms, measured on the DESKTOP — the
+    /// phone sizes each segment from these, never from network arrival
+    /// timing (arrivals batch and burst; arrival gaps lie about velocity).
+    /// Missing dt (older desktop) → phone falls back to arrival timing.
     DragStart {
         x: f32,
         y: f32,
+        #[serde(default)]
+        dt: u32,
     },
     DragMove {
         x: f32,
         y: f32,
+        #[serde(default)]
+        dt: u32,
     },
     DragEnd {
         x: f32,
         y: f32,
+        #[serde(default)]
+        dt: u32,
     },
     /// Inject a key press (android keycode name or UI key, e.g. "Enter").
     Key {
@@ -177,6 +187,15 @@ pub enum Command {
         app: String,
         notif_id: i32,
         text: String,
+    },
+    /// Re-tune the phone's capture: cap the long edge and JPEG quality.
+    /// 0 means "leave this knob alone", so the desktop can send only what
+    /// changed. The phone applies it live, without dropping the projection.
+    SetQuality {
+        #[serde(default)]
+        max_width: u32,
+        #[serde(default)]
+        quality: u32,
     },
 }
 
@@ -196,8 +215,24 @@ pub enum Event {
         title: String,
         body: String,
         /// Android notification id — needed to reply to this notification.
-        #[serde(default)]
+        /// `alias` keeps phones that emit the legacy camelCase `notifId`
+        /// readable; without it `default` silently yields 0 and every reply
+        /// targets a non-existent notification.
+        #[serde(default, alias = "notifId")]
         notif_id: i32,
+    },
+    /// Authoritative phone-side state, pushed on every change. The desktop
+    /// renders from THIS, never from guesswork about its own socket.
+    PhoneState {
+        link: bool,
+        mirror: bool,
+        locked: bool,
+        /// Accessibility service is bound — gestures can actually be injected.
+        /// False means "mirror is live but taps/swipes are dead": the desktop
+        /// must say so instead of swallowing input commands.
+        /// `default` keeps older phones (which don't send it) parseable.
+        #[serde(default)]
+        control: bool,
     },
     /// Reply to `Command::Paste`.
     ClipboardReply {
@@ -226,6 +261,29 @@ pub const CHUNK_MAGIC: &[u8; 3] = b"LF1";
 /// Layout: b"LV1" + jpeg bytes.
 pub const FRAME_MAGIC: &[u8; 3] = b"LV1";
 
+/// Binary WS frame header for audio chunks (phone → desktop).
+/// Layout: b"LA1" + u16 LE rate + u16 LE channels + u32 LE sample count + PCM i16 LE.
+///
+/// MUST NOT be `LF1`: that magic is the file-chunk header, and `decode_frame`
+/// claims `LF1` first. Sharing it meant every audio frame was misparsed as a
+/// file chunk (the sample rate's low byte was read as the id length), so audio
+/// never reached the player.
+pub const AUDIO_MAGIC: &[u8; 3] = b"LA1";
+
+/// Build an audio frame. The phone and the sim both use this, so the framing
+/// cannot drift between them.
+pub fn encode_audio(rate: u16, channels: u16, samples: &[i16]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(11 + samples.len() * 2);
+    out.extend_from_slice(AUDIO_MAGIC);
+    out.extend_from_slice(&rate.to_le_bytes());
+    out.extend_from_slice(&channels.to_le_bytes());
+    out.extend_from_slice(&(samples.len() as u32).to_le_bytes());
+    for s in samples {
+        out.extend_from_slice(&s.to_le_bytes());
+    }
+    out
+}
+
 pub fn encode_chunk(id: &str, data: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(3 + 1 + id.len() + data.len());
     out.extend_from_slice(CHUNK_MAGIC);
@@ -253,10 +311,10 @@ pub fn decode_frame(frame: &[u8]) -> DecodedFrame {
     DecodedFrame::Text
 }
 
-/// Audio chunk header after the `b"LF1"` magic (phone -> desktop):
+/// Audio chunk header after the `b"LA1"` magic (phone -> desktop):
 /// u16 LE sample rate, u16 LE channels, u32 LE sample count, then PCM i16 LE.
 pub fn parse_audio_chunk(bin: &[u8]) -> Option<(u16, u16, u32, Vec<i16>)> {
-    if bin.len() < 3 + 8 || &bin[..3] != CHUNK_MAGIC {
+    if bin.len() < 3 + 8 || &bin[..3] != AUDIO_MAGIC {
         return None;
     }
     let rate = u16::from_le_bytes([bin[3], bin[4]]);
@@ -388,5 +446,79 @@ mod tests {
         };
         let json = serde_json::to_string(&t).unwrap();
         assert!(serde_json::from_str::<Command>(&json).is_ok());
+    }
+
+    /// Regression: audio used to be framed `LF1`, the file-chunk magic that
+    /// `decode_frame` claims first. A 16 kHz chunk has low rate byte 128, so
+    /// `len > 4 + 128` held and every audio frame decoded as a file chunk with
+    /// a garbage id — the audio branch was unreachable. Distinct magic fixes it.
+    #[test]
+    fn audio_frame_is_not_mistaken_for_a_file_chunk() {
+        let samples: Vec<i16> = (0..1600).map(|i| (i % 300) as i16).collect();
+        let frame = encode_audio(16000, 1, &samples);
+
+        assert_eq!(&frame[..3], AUDIO_MAGIC);
+        assert!(&frame[..3] != CHUNK_MAGIC);
+        // Not a file chunk: id_len byte 128 would overrun a 100ms (3211-byte) frame,
+        // and a full 900ms frame would decode to a 128-byte garbage id.
+        assert!(matches!(decode_frame(&frame), DecodedFrame::Text));
+
+        let (rate, chans, count, pcm) = parse_audio_chunk(&frame).expect("parses as audio");
+        assert_eq!((rate, chans, count), (16000, 1, 1600));
+        assert_eq!(pcm, samples);
+    }
+
+    /// A file chunk must still parse as a file chunk, and audio must not.
+    #[test]
+    fn file_and_audio_frames_stay_separate() {
+        let chunk = encode_chunk("f-1", b"payload");
+        assert!(matches!(decode_frame(&chunk), DecodedFrame::Chunk { .. }));
+        assert!(
+            parse_audio_chunk(&chunk).is_none(),
+            "file chunk is not audio"
+        );
+
+        let audio = encode_audio(48000, 2, &[1, 2, 3, 4]);
+        assert!(parse_audio_chunk(&audio).is_some());
+        assert_ne!(&audio[..3], CHUNK_MAGIC);
+    }
+
+    #[test]
+    fn set_quality_roundtrip() {
+        let q = Command::SetQuality {
+            max_width: 720,
+            quality: 78,
+        };
+        let json = serde_json::to_string(&q).unwrap();
+        assert!(json.contains(r#""t":"set_quality""#));
+        let back: Command = serde_json::from_str(&json).unwrap();
+        assert!(matches!(
+            back,
+            Command::SetQuality {
+                max_width: 720,
+                quality: 78
+            }
+        ));
+
+        // Each field is independently defaulted, so the desktop can send only
+        // the knob that changed. `tag`+`content` still needs the `d` key
+        // present (serde requires it even when every field defaults) — an
+        // older phone that never saw this variant simply ignores the tag.
+        let only_dim = Command::SetQuality {
+            max_width: 360,
+            quality: 0,
+        };
+        let back: Command =
+            serde_json::from_str(&serde_json::to_string(&only_dim).unwrap()).unwrap();
+        assert!(matches!(
+            back,
+            Command::SetQuality {
+                max_width: 360,
+                quality: 0
+            }
+        ));
+
+        // An unknown tag must fail cleanly, not panic.
+        assert!(serde_json::from_str::<Command>(r#"{"t":"nope"}"#).is_err());
     }
 }

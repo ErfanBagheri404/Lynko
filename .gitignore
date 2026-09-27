@@ -26,3 +26,11 @@ Thumbs.db
 # Env / secrets
 .env
 .env.*
+
+# Dev artifacts
+devlogs/
+NUL
+
+# Untracked tooling / test artifacts
+.impeccable/
+sim/downloads/

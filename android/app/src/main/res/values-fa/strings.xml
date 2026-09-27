@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">Lynko</string>
+    <string name="accessibility_service_description">لینکو از این سرویس برای دریافت فرمان‌های لمس و سوایپ از دسکتاپ جفت‌شده استفاده می‌کند.</string>
+    <string name="nav_home">خانه</string>
+    <string name="nav_screen">اشتراک‌گذاری</string>
+    <string name="interface_animations">پویانمایی رابط</string>
+    <string name="motion_on">پویانمایی رابط روشن شد</string>
+    <string name="motion_off">پویانمایی رابط خاموش شد</string>
+</resources>
