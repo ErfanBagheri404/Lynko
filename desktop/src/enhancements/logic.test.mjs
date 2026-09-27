@@ -49,3 +49,22 @@ test('health distinguishes unreported, no frames, stalled, idle and unavailable'
   assert.equal(h({connected:true,mirror:false}, 9500, 10000), 'idle');
   assert.equal(h({connected:true}, null, 10000, false), 'unavailable');
 });
+test('per-app mute blocks forever; snooze lifts at its deadline', () => {
+  assert.equal(typeof logic.isAppSuppressed, 'function');
+  const is = logic.isAppSuppressed;
+  // never muted, never snoozed
+  assert.equal(is('chat.app', [], {}, 1000), false);
+  // hard mute wins regardless of a stale snooze
+  assert.equal(is('chat.app', ['chat.app'], {}, 1000), true);
+  assert.equal(is('chat.app', ['chat.app'], {other:9999}, 1000), true);
+  // snooze active before its deadline, released after
+  assert.equal(is('chat.app', [], {['chat.app']: 5000}, 4000), true);
+  assert.equal(is('chat.app', [], {['chat.app']: 5000}, 5000), false);
+  assert.equal(is('chat.app', [], {['chat.app']: 5000}, 6000), false);
+  // exact-name match only, no substring bleed
+  assert.equal(is('chat', ['chat.app'], {}, 1000), false);
+  assert.equal(is('chat.app.extra', ['chat.app'], {}, 1000), false);
+  // garbage persisted shapes must not throw
+  assert.equal(is('chat.app', null, null, 1000), false);
+  assert.equal(is('chat.app', undefined, {['chat.app']: 'soon'}, 1000), false);
+});

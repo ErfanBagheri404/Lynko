@@ -68,3 +68,7 @@ html[data-motion=off] *,html[data-motion=off] *::before,html[data-motion=off] *:
 }
 .qbtn:hover { border-color:var(--signal-line); color:var(--ink0); }
 .qbtn.on { color:#ffb454; border-color:#ffb454; }
+
+/* Notification per-app mute / snooze */
+.notif-apps .row { display:flex; gap:6px; margin-inline-start:auto; }
+.btn.sm.on { color:#ffb454; border-color:#ffb454; }
