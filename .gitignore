@@ -17,6 +17,10 @@ android/local.properties
 !debug.keystore
 android/.idea/
 
+# Release signing — NEVER commit these
+android/keystore/
+*.jks
+
 # IDE / OS
 .vscode/
 .idea/
