@@ -414,6 +414,24 @@ async fn handle_command(
             println!("sim: NOTIFREPLY {app}#{notif_id} {:?}", text);
             Some(Event::Log { msg: format!("notif reply {app}") })
         }
+        Command::Dnd { on } => {
+            println!("sim: DND {on}");
+            Some(Event::Log { msg: format!("dnd {on}") })
+        }
+        Command::ListApps => {
+            println!("sim: LISTAPPS");
+            Some(Event::AppList {
+                apps: vec![
+                    lynko_core::AppEntry { package: "com.android.settings".into(), label: "Settings".into() },
+                    lynko_core::AppEntry { package: "com.android.chrome".into(), label: "Chrome".into() },
+                    lynko_core::AppEntry { package: "com.android.camera".into(), label: "Camera".into() },
+                ],
+            })
+        }
+        Command::LaunchApp { package } => {
+            println!("sim: LAUNCHAPP {package}");
+            Some(Event::Log { msg: format!("launched {package}") })
+        }
     }
     // encode_chunk is exercised by the desktop sender; sim just decodes.
     // (referenced so the import stays honest in this file)

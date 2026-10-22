@@ -706,6 +706,43 @@ fn request_status(state: State<'_, LynkoState>) -> Result<(), String> {
     send_cmd(&state, &Command::StatusGet)
 }
 
+/// Samsung Flow parity: "Do not disturb" in the Smart View bar. While on,
+/// the phone stops relaying notifications to the desktop.
+#[tauri::command]
+fn set_dnd(state: State<'_, LynkoState>, on: bool) -> Result<(), String> {
+    send_cmd(&state, &Command::Dnd { on })
+}
+
+/// Samsung Flow parity: request the phone's launchable apps so the desktop
+/// can offer them as mirror-window favorites.
+#[tauri::command]
+fn request_app_list(state: State<'_, LynkoState>) -> Result<(), String> {
+    send_cmd(&state, &Command::ListApps)
+}
+
+/// Samsung Flow parity: launch an app on the phone from the mirror window.
+#[tauri::command]
+fn launch_app(state: State<'_, LynkoState>, package: String) -> Result<(), String> {
+    send_cmd(&state, &Command::LaunchApp { package })
+}
+
+/// Samsung Flow parity: "Screen capture" in the Smart View bar. Writes the
+/// newest mirrored frame to Pictures/Lynko and returns the path.
+///
+/// The frame is the exact JPEG the desktop is already painting — no second
+/// capture, no re-encode, so the file matches what is on screen.
+#[tauri::command]
+fn capture_screenshot(app: AppHandle, state: State<'_, LynkoState>) -> Result<String, String> {
+    let bytes = state.latest_frame.lock().unwrap().clone();
+    if bytes.is_empty() { return Err("no frame yet".into()); }
+    let dir = app.path().picture_dir().map_err(|e| e.to_string())?.join("Lynko");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+    let path = dir.join(format!("lynko-{stamp}.jpg"));
+    std::fs::write(&path, &bytes).map_err(|e| e.to_string())?;
+    Ok(path.to_string_lossy().to_string())
+}
+
 #[tauri::command]
 fn screen_start(state: State<'_, LynkoState>) -> Result<(), String> {
     send_cmd(&state, &Command::StartScreen)
@@ -1564,6 +1601,13 @@ fn main() {
             start_frame_server(handle.clone());
             audio_server::start(handle.clone());
             transfer_receive::start(handle.clone());
+            transfer_receive::init_history(
+                handle
+                    .path()
+                    .app_config_dir()
+                    .unwrap()
+                    .join("history.json"),
+            );
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -1598,10 +1642,16 @@ fn main() {
             send_files_v2,
             transfer_receive::answer_transfer,
             transfer_receive::set_transfer_pin,
+            transfer_receive::history_list,
+            transfer_receive::history_clear,
             set_pc_clipboard,
             get_pc_clipboard,
             toggle_hotkeys,
-            check_update
+            check_update,
+            set_dnd,
+            request_app_list,
+            launch_app,
+            capture_screenshot
         ])
         .run(tauri::generate_context!())
         .expect("error while running Lynko");

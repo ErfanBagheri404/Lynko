@@ -1,6 +1,6 @@
 .enhancement-panel { margin: 12px 0; padding: 16px; border-radius:0; }
 .stage > .enhancement-panel { margin: 16px 20px 0; flex-shrink:0; padding: 14px 16px; }
-.stage > .enhancement-panel h2 { margin: 0 0 6px; font-size: 13px; letter-spacing: .02em; text-transform: uppercase; color: var(--ink2, #8b8d90); }
+.stage > .enhancement-panel h2 { margin: 0 0 6px; font-size: 13px; letter-spacing: .02em; text-transform: uppercase; color: var(--ink1, #8b8d90); }
 .stage > .enhancement-panel .desc { margin: 4px 0 8px; }
 .stage > .enhancement-panel .health-grid { margin: 4px 0 2px; }
 .stage > .enhancement-panel .btn { margin-top: 4px; }
@@ -72,3 +72,20 @@ html[data-motion=off] *,html[data-motion=off] *::before,html[data-motion=off] *:
 /* Notification per-app mute / snooze */
 .notif-apps .row { display:flex; gap:6px; margin-inline-start:auto; }
 .btn.sm.on { color:#ffb454; border-color:#ffb454; }
+
+/* LocalSend-parity transfer UI: progress panel + receive history */
+.incoming-progress { position:fixed; bottom:48px; right:20px; z-index:80; width:min(420px,80vw); padding:14px 16px; background:var(--card); border:1px solid var(--line); }
+.incoming-progress-title { font-size:13px; letter-spacing:.02em; text-transform:uppercase; color:var(--ink1,#8b8d90); margin-bottom:8px; }
+.incoming-progress-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; font-size:12px; color:var(--ink1,#c9c7c2); margin-bottom:8px; }
+.incoming-files { list-style:none; margin:10px 0 0; padding:0; max-height:160px; overflow-y:auto; border-top:1px solid var(--line); }
+.incoming-files li { display:flex; gap:10px; align-items:baseline; padding:6px 0; border-bottom:1px solid var(--line); font-size:12px; }
+.incoming-file-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.incoming-file-size { color:var(--ink1,#8b8d90); font-variant-numeric:tabular-nums; }
+.incoming-file-state { color:var(--accent,#FFB454); min-width:64px; text-align:end; }
+.incoming-history { margin:16px 0; border-top:1px solid var(--line); }
+.incoming-history-head { display:flex; align-items:center; justify-content:space-between; padding:10px 0; }
+.incoming-history-head h3 { margin:0; font-size:13px; letter-spacing:.02em; text-transform:uppercase; color:var(--ink1,#8b8d90); }
+.incoming-empty { color:var(--ink1,#8b8d90); font-size:12px; padding:8px 0; }
+.incoming-history-row { display:flex; gap:10px; align-items:baseline; padding:7px 0; border-top:1px solid var(--line); font-size:12px; }
+.incoming-history-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.incoming-history-meta { color:var(--ink1,#8b8d90); font-variant-numeric:tabular-nums; white-space:nowrap; }

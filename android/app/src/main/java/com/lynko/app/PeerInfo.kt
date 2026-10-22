@@ -10,4 +10,10 @@ package com.lynko.app
 object PeerInfo {
     /** Desktop's computer name, or empty until `hello` arrives. */
     @Volatile var alias: String = ""
+
+    /** Desktop name normalised to a filename-safe key. LocalSend keys a
+     *  favorite by fingerprint; ours is the link's device id, which the phone
+     *  never sees, so the hello alias is the closest stable identity. */
+    fun keyOf(name: String): String =
+        name.trim().lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').ifBlank { "desktop" }
 }

@@ -79,6 +79,7 @@ export function useTransfers(api:Bridge, connected:boolean, deviceId:string|unde
     rows.current.push({id,requestId:crypto.randomUUID(),path,deviceId:current.deviceId,name:path.split(/[\\/]/).pop()??path,at:Date.now(),status:'queued'});
     queue.current.enqueue(id); publish(); pump.current();
   };
+
   const cancelFile = (id:number) => {
     if(!queue.current.cancel(id)) return;
     const item=rows.current.find(f=>f.id===id)!; item.status='cancelled';publish();pump.current();
@@ -95,11 +96,19 @@ export function useTransfers(api:Bridge, connected:boolean, deviceId:string|unde
 /** Call `toggle_hotkeys` on the Rust side whenever the pref flips. A rejected
  *  promise means the OS refused the combo (another app owns it) — the Settings
  *  toggle rolls itself back on `onConflict` instead of lying about being on. */
-export function useHotkeys(api:Bridge, enabled:boolean, onConflict:(reason:string)=>void) {
+export function useHotkeys(api: Bridge, enabled: boolean, onConflict: (reason: string) => void) {
   useEffect(() => {
-    let disposed=false;
+    // No native bridge (e.g. running the UI in a plain browser during dev):
+    // there is nothing to register, so don't surface a bogus conflict toast.
+    if (!api?.invoke) return;
+    let disposed = false;
     void api.invoke('toggle_hotkeys', {enabled})
-      .catch((e) => { if (!disposed) onConflict(String(e)); });
+      .catch((e) => {
+        // Only an ENABLE attempt can be refused for "already owned".
+        // A disable rejection (nothing to unregister / IPC hiccup) is not a
+        // conflict worth toasting or rolling back.
+        if (enabled && !disposed) onConflict(String(e));
+      });
     return () => { disposed = true; };
   }, [api, enabled, onConflict]);
 }

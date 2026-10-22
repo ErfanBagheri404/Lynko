@@ -7,7 +7,13 @@ import java.util.concurrent.atomic.AtomicReference
 object LinkNotifier {
     val broadcaster = AtomicReference<((String) -> Unit)?>(null)
 
+    /** Samsung Flow parity: the Smart View bar's "Do not disturb".
+     *  While set, phone notifications are NOT relayed to the desktop, so
+     *  mirroring stays quiet. Off again the moment the desktop clears it. */
+    val dnd = java.util.concurrent.atomic.AtomicBoolean(false)
+
     fun push(pkg: String, title: String, text: String, notifId: Int = 0) {
+        if (dnd.get()) return
         val send = broadcaster.get() ?: return
         // Called from the notification listener thread — a send on a socket
         // closing underneath throws and kills the process (and the

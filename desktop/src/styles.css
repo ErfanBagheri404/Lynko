@@ -623,6 +623,33 @@ input.field:focus {
   font-variant-numeric: tabular-nums;
 }
 
+/* LocalSend's target card: who a send would go to; when nothing is linked,
+   the named cause (same Wi-Fi) + a real way out instead of a dead dropzone. */
+.share-target {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 12px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.share-target-label { color: var(--ink1); font-size: 12px; }
+.share-target-state { color: var(--ok); font-size: 12px; margin-inline-start: auto; }
+.share-target.off { align-items: baseline; flex-wrap: wrap; }
+.share-target-none { color: var(--ink0); font-size: 14px; }
+.share-target-hint { color: var(--ink1); font-size: 12px; }
+.radar-hint {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  color: var(--ink1);
+  font-size: 12px;
+}
+
 .devrow {
   display: flex;
   align-items: center;
@@ -842,11 +869,26 @@ input.field:focus {
 
 .qr-img {
   display: block;
-  width: 180px;
-  height: 180px;
-  margin: 12px auto;
+  width: 204px;
+  height: 204px;
   image-rendering: pixelated;
+  /* The QR is rendered dark-on-light for scanner compatibility, so it needs a
+     light backing or it would look like a stray white square on the dark card. */
+  background: #ffffff;
+  padding: 8px;
   border: 1px solid var(--line);
+  border-radius: 6px;
+  box-sizing: content-box;
+}
+
+/* The QR sits inside an <a>, which is INLINE content: margin:auto on the
+   image cannot centre it inside an inline box, so it hugged the left edge.
+   Centre the anchor (shrink-to-fit + auto margins) and let the image fill it. */
+.qr-link {
+  display: block;
+  width: fit-content;
+  margin: 14px auto;
+  cursor: pointer;
 }
 
 .qr-url {
@@ -893,6 +935,80 @@ input.field:focus {
 }
 
 .screen-frame.lit .screen-canvas { width: 100%; }
+
+/* Samsung Flow parity: favorites strip + picker inside the Screen view. */
+.fav-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 0 12px;
+}
+.fav-chip {
+  padding: 4px 11px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink1);
+  background: var(--card2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-ctl);
+  cursor: pointer;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fav-chip:hover:not(:disabled) { color: var(--ink0); border-color: var(--line-strong); }
+.fav-chip:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.fav-picker {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--card);
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+.fav-picker-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.fav-picker-head strong { font-size: 13px; }
+.fav-picker-head span { flex: 1; color: var(--ink1); font-size: 12px; }
+.fav-picker-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 4px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.fav-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+  text-align: start;
+  padding: 7px 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-ctl);
+  color: var(--ink0);
+  cursor: pointer;
+  font-family: inherit;
+}
+.fav-row:hover:not(:disabled) { background: var(--card2); }
+.fav-row.on { border-color: var(--signal-line); background: var(--signal-wash); }
+.fav-row:disabled { opacity: 0.45; cursor: not-allowed; }
+.fav-row-label { font-size: 12.5px; font-weight: 600; }
+.fav-row-pkg {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink1, #8b8d90);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
 
 .screen-canvas .tap-layer {
   position: absolute;

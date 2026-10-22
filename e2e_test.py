@@ -99,11 +99,15 @@ async def test_link_session():
             {"t": "paste"},
             {"t": "status_get"},
             {"t": "set_quality", "d": {"max_width": 720, "quality": 78}},
+            # Samsung Flow parity (Smart View control bar)
+            {"t": "dnd", "d": {"on": True}},
+            {"t": "list_apps"},
+            {"t": "launch_app", "d": {"package": "com.android.settings"}},
         ]
         for c in cmds:
             await ws.send(json.dumps(c))
             await asyncio.sleep(0.05)
-        check("ws: 13 input commands sent", True)
+        check("ws: 16 input commands sent", True)
 
         # wait for replies (status_get → battery, paste → clipboard_reply, logs)
         reply_types = set()
@@ -120,6 +124,8 @@ async def test_link_session():
         check("ws: responses received", len(reply_types) > 0, f"keys={sorted(reply_types)}")
         check("ws: clipboard round-trip", "clipboard_reply" in reply_types, f"keys={sorted(reply_types)}")
         check("ws: battery round-trip", "battery" in reply_types, f"keys={sorted(reply_types)}")
+        check("ws: app_list round-trip (favorites picker)", "app_list" in reply_types,
+              f"keys={sorted(reply_types)}")
 
         # stop mirror
         await ws.send(json.dumps({"t": "stop_screen"}))
