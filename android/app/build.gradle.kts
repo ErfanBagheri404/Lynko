@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -36,17 +38,31 @@ android {
         }
     }
 
-    // Release signing from env (CI). Without a keystore we fall back to the
-    // debug key so CI artifacts remain installable for sideloading.
-    val ksPath: String? = System.getenv("KEYSTORE_FILE")
+    // Release signing: read android/keystore/keystore.properties (gitignored)
+    // first, with env vars taking precedence so CI keeps working unchanged.
+    // Without either we fall back to the debug key so CI artifacts remain
+    // installable for sideloading.
+    val signingProps = Properties().apply {
+        val f = rootProject.file("keystore/keystore.properties")
+        if (f.exists()) f.inputStream().use { load(it) }
+    }
+
+    fun signing(envName: String, propName: String): String? =
+        System.getenv(envName)?.takeIf { it.isNotBlank() }
+            ?: signingProps.getProperty(propName)?.takeIf { it.isNotBlank() }
+
+    val ksPath: String? = signing("KEYSTORE_FILE", "storeFile")?.let { raw ->
+        val f = File(raw)
+        if (f.isAbsolute) f.absolutePath else rootProject.file(raw).absolutePath
+    }
 
     signingConfigs {
         if (ksPath != null) {
             create("release") {
                 storeFile = File(ksPath)
-                storePassword = System.getenv("KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("KEY_ALIAS")
-                keyPassword = System.getenv("KEY_PASSWORD")
+                storePassword = signing("KEYSTORE_PASSWORD", "storePassword")
+                keyAlias = signing("KEY_ALIAS", "keyAlias")
+                keyPassword = signing("KEY_PASSWORD", "keyPassword")
             }
         }
     }
