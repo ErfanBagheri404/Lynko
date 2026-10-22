@@ -27,7 +27,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="56dp"
+                android:layout_marginTop="36dp"
                 android:text="@string/app_name"
                 android:textColor="#E8E6E1"
                 android:fontFamily="@font/lynko_ui"
@@ -39,7 +39,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="2dp"
-                android:layout_marginBottom="28dp"
+                android:layout_marginBottom="20dp"
                 android:text="@string/app_tagline"
                 android:textColor="#8B8D90"
                 android:fontFamily="@font/lynko_ui"
@@ -86,7 +86,7 @@
 
             <!-- ================= 02 · REQUIRES ================= -->
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:layout_marginTop="28dp" android:orientation="horizontal" android:gravity="center_vertical">
+                android:layout_marginTop="20dp" android:orientation="horizontal" android:gravity="center_vertical">
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
                     android:text="02" android:textColor="#555658" android:fontFamily="monospace" android:textSize="11sp" />
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
@@ -97,7 +97,7 @@
 
             <!-- perm: screen -->
             <LinearLayout android:id="@+id/permScreen" android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="48dp" android:paddingTop="12dp" android:paddingBottom="12dp">
+                android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="46dp" android:paddingTop="9dp" android:paddingBottom="9dp">
                 <TextView android:id="@+id/permScreenIcon" android:layout_width="22dp" android:layout_height="22dp"
                     android:gravity="center" android:text="•" android:textColor="#FFB454" android:textSize="15sp" android:fontFamily="monospace" android:includeFontPadding="false" />
                 <TextView android:id="@+id/permScreenText" android:layout_width="wrap_content" android:layout_height="wrap_content"
@@ -107,7 +107,7 @@
 
             <!-- perm: a11y -->
             <LinearLayout android:id="@+id/permA11y" android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="48dp" android:paddingTop="12dp" android:paddingBottom="12dp">
+                android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="46dp" android:paddingTop="9dp" android:paddingBottom="9dp">
                 <TextView android:id="@+id/permA11yIcon" android:layout_width="22dp" android:layout_height="22dp"
                     android:gravity="center" android:text="•" android:textColor="#FFB454" android:textSize="15sp" android:fontFamily="monospace" android:includeFontPadding="false" />
                 <TextView android:id="@+id/permA11yText" android:layout_width="wrap_content" android:layout_height="wrap_content"
@@ -117,7 +117,7 @@
 
             <!-- perm: battery -->
             <LinearLayout android:id="@+id/permBattery" android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="48dp" android:paddingTop="12dp" android:paddingBottom="12dp">
+                android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="46dp" android:paddingTop="9dp" android:paddingBottom="9dp">
                 <TextView android:id="@+id/permBatteryIcon" android:layout_width="22dp" android:layout_height="22dp"
                     android:gravity="center" android:text="•" android:textColor="#FFB454" android:textSize="15sp" android:fontFamily="monospace" android:includeFontPadding="false" />
                 <TextView android:id="@+id/permBatteryText" android:layout_width="wrap_content" android:layout_height="wrap_content"
@@ -127,7 +127,7 @@
 
             <!-- perm: notifications -->
             <LinearLayout android:id="@+id/permNotif" android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="48dp" android:paddingTop="12dp" android:paddingBottom="12dp">
+                android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="46dp" android:paddingTop="9dp" android:paddingBottom="9dp">
                 <TextView android:id="@+id/permNotifIcon" android:layout_width="22dp" android:layout_height="22dp"
                     android:gravity="center" android:text="•" android:textColor="#FFB454" android:textSize="15sp" android:fontFamily="monospace" android:includeFontPadding="false" />
                 <TextView android:id="@+id/permNotifText" android:layout_width="wrap_content" android:layout_height="wrap_content"
@@ -136,7 +136,7 @@
 
             <!-- ================= 03 · START ================= -->
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:layout_marginTop="28dp" android:orientation="horizontal" android:gravity="center_vertical">
+                android:layout_marginTop="20dp" android:orientation="horizontal" android:gravity="center_vertical">
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
                     android:text="03" android:textColor="#555658" android:fontFamily="monospace" android:textSize="11sp" />
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
@@ -160,7 +160,7 @@
                 app:backgroundTint="@null"
                 android:stateListAnimator="@null" />
 
-            <Space android:layout_width="match_parent" android:layout_height="16dp" />
+            <Space android:layout_width="match_parent" android:layout_height="20dp" />
         </LinearLayout>
     </ScrollView>
 
@@ -189,9 +189,16 @@
             <Button android:id="@+id/audioPermission" android:layout_width="match_parent" android:layout_height="56dp"
                 android:text="@string/audio_permission" android:textColor="#FFB454"
                 android:fontFamily="@font/lynko_ui" android:textStyle="bold" android:textSize="15sp"
+                android:gravity="start|center_vertical" android:textAlignment="viewStart"
                 android:background="?attr/selectableItemBackground" />
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/audio_permission_hint"
                 android:textColor="#8B8D90" android:textSize="13sp" android:fontFamily="@font/lynko_ui" />
+            <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#303236" />
+            <Button android:id="@+id/privacyPolicy" android:layout_width="match_parent" android:layout_height="56dp"
+                android:text="@string/privacy_policy_button" android:textColor="#8B8D90"
+                android:fontFamily="@font/lynko_ui" android:textSize="15sp"
+                android:gravity="start|center_vertical" android:textAlignment="viewStart"
+                android:background="?attr/selectableItemBackground" />
         </LinearLayout>
     </ScrollView>
 
