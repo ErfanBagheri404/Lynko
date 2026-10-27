@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Debug-only. Lets `adb shell pm grant com.lynko.app WRITE_SECURE_SETTINGS`
+         let DevPermHeal re-enable the app's own accessibility + notification-listener
+         grants after each ADB reinstall (MIUI silently wipes both; stock Android
+         keeps them). Never present in a release build — a store install can never
+         grant this, so requesting it only reads as suspicious to a reviewer. -->
+    <uses-permission
+        android:name="android.permission.WRITE_SECURE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
+
+</manifest>
