@@ -42,7 +42,10 @@ jobs:
             CODE=$(echo "$V" | awk -F. '{ printf "%d%03d%03d", $1, $2, $3 }')
             PRE=false
           else
-            V="0.1.$(date -u +%Y%m%d)"
+            # NSIS/MSI cap the patch segment at 65535, so a full date
+            # (20261027) is illegal. Day-of-year (yy + DDD = 26301) stays
+            # ≤ 99365 and is monotonic across years.
+            V="0.1.$(date -u +%y%j)"
             CODE=$(date -u +%Y%m%d)
             PRE=true
           fi
