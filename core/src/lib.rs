@@ -197,6 +197,19 @@ pub enum Command {
         #[serde(default)]
         quality: u32,
     },
+    /// Smart View parity: mute the phone notification relay to the desktop
+    /// while mirroring (Flow's "Do not disturb" in the Smart View bar).
+    Dnd {
+        on: bool,
+    },
+    /// Smart View parity: launch an app on the phone by package name
+    /// (Flow's "Favorites" quick-launch inside the mirror window).
+    LaunchApp {
+        package: String,
+    },
+    /// Smart View parity: request the phone's launchable apps (for the
+    /// Favorites picker). Phone replies with `Event::AppList`.
+    ListApps,
 }
 
 /// Events phone → desktop over the control link (JSON text frames).
@@ -251,6 +264,17 @@ pub enum Event {
     Log {
         msg: String,
     },
+    /// Smart View parity: phone's launchable apps (for the Favorites picker).
+    AppList {
+        apps: Vec<AppEntry>,
+    },
+}
+
+/// Smart View parity: one entry in the phone's app list.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppEntry {
+    pub package: String,
+    pub label: String,
 }
 
 /// Binary WS frame header for file chunks (desktop → phone).

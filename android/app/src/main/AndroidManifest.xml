@@ -12,16 +12,27 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- Package visibility (Android 11+): the desktop's Favorites picker needs
+         the list of launchable apps, and launching one needs its package.
+         Without this <queries> block queryIntentActivities() returns only
+         Lynko's own package and the picker is empty. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
     <!-- Low-latency screen mirror: holds the Wi-Fi radio out of power-save so
          frames arrive in 8-30ms batches instead of 100-300ms bursts (MIUI
          wifi power-save is the "sometimes the mirror lags" on LAN). -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <!-- Dev convenience: adb grants WRITE_SECURE_SETTINGS so the app can
-         re-enable its own a11y/notif grants after each adb reinstall
-         (MIUI wipes these on reinstall; stock Android doesn't). -->
-    <uses-permission
-        android:name="android.permission.WRITE_SECURE_SETTINGS"
-        tools:ignore="ProtectedPermissions" />
+    <!-- NOTE: WRITE_SECURE_SETTINGS is deliberately NOT declared here.
+             It is a signature|privileged permission that no store install can
+             ever grant; it exists only so `adb shell pm grant` can re-enable the
+             app's own a11y/notification grants after an ADB reinstall (MIUI wipes
+             them, stock Android does not). Declaring it in the release manifest
+             made Lynko ship a protected-permission request to users who can never
+             approve it. It lives in src/debug/AndroidManifest.xml instead. -->
 
     <application
         android:label="Lynko"

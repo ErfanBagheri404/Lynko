@@ -8,6 +8,8 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import android.content.Intent
+import android.net.Uri
+import android.os.Environment
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -156,15 +158,23 @@ class MainActivity : AppCompatActivity() {
         )
 
         shareTab = screenTab
-        screenTab.onChoose = {
-            if (!PhoneState.link) showFeedback(Loc.t("phone", "share_connect"))
-            else if (!sharedUris.isNullOrEmpty()) chooseSharePeer(sharedUris!!)
-            else startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                type = "*/*"; addCategory(Intent.CATEGORY_OPENABLE)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }, 9100)
-        }
+        screenTab.onChoose = { pickShareFile(false) }
         screenTab.onReceive = { startLinkService() }
+        screenTab.onPickFile = { pickShareFile(false) }
+        screenTab.onPickMedia = { pickShareFile(true) }
+        screenTab.onPickText = { showTextDialog() }
+        screenTab.onPaste = { sendClipboardText() }
+        screenTab.onSend = { sendStaged() }
+        screenTab.onCancel = { ShareSender.cancel() }
+        screenTab.onOpenFolder = {
+            try {
+                startActivity(Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(Uri.parse(Environment.DIRECTORY_DOWNLOADS),
+                        "resource/folder")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                })
+            } catch (_: Exception) { showFeedback(Loc.t("phone", "general_offline")) }
+        }
         ShareSender.onChange = { screenTab.render() }
 
         // Bottom nav: switch tabs.
@@ -191,6 +201,25 @@ class MainActivity : AppCompatActivity() {
             if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
                 showFeedback(getString(R.string.audio_permission_granted))
             } else ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), 102)
+        }
+        findViewById<Button>(R.id.privacyPolicy).setOnClickListener {
+            // setMessage() does not scroll: the long policy got silently cut
+            // off mid-sentence, and Myket requires the privacy text to be
+            // readable in-app. Use a scrollable body instead.
+            val pad = (20 * resources.displayMetrics.density).toInt()
+            val body = TextView(this).apply {
+                text = getString(R.string.privacy_policy_body)
+                setTextColor(0xFFE8E6E1.toInt())
+                textSize = 14f
+                setLineSpacing(0f, 1.15f)
+                setPadding(pad, pad / 2, pad, pad / 2)
+            }
+            val scroller = ScrollView(this).apply { addView(body) }
+            android.app.AlertDialog.Builder(this)
+                .setTitle(R.string.privacy_policy_title)
+                .setView(scroller)
+                .setPositiveButton(android.R.string.ok, null)
+                .show()
         }
         val motionToggle = findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.motionToggle)
         motionToggle.isChecked = getPreferences(Context.MODE_PRIVATE).getBoolean("motion", true)
@@ -413,11 +442,15 @@ class MainActivity : AppCompatActivity() {
             // on the lane's own mark — • pending (amber), ╬ granted (muted,
             // struck). No background swap, no rounding.
             row.setBackgroundResource(0)
-            row.alpha = if (ok) 0.55f else 1f
+            // Granted rows keep FULL alpha: 0.55 over #8B8D90 composites to
+            // ~2.6:1 and the strike-through line was the only thing reading as
+            // "done". Contrast must stay AA (5.9:1); state is carried by the
+            // mark (•/✓) and the strike, not by fading the text out.
+            row.alpha = 1f
             icon.text = if (ok) "✓" else "•"
-            icon.setTextColor(if (ok) 0xFF555658.toInt() else 0xFFFFB454.toInt())
+            icon.setTextColor(if (ok) 0xFF8B8D90.toInt() else 0xFFFFB454.toInt())
             text.paint.isStrikeThruText = ok
-            text.setTextColor(if (ok) 0xFF555658.toInt() else 0xFF8B8D90.toInt())
+            text.setTextColor(if (ok) 0xFF8B8D90.toInt() else 0xFFE8E6E1.toInt())
             text.text = label
         }
         bind(permScreen, permScreenIcon, permScreenText, ScreenPermission.isGranted, Loc.t("phone", "perm_screen"))
@@ -446,17 +479,104 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun chooseSharePeer(uris: List<android.net.Uri>) {
+    private fun pickShareFile(media: Boolean) {
+        // Media restricts the SAF sheet to images+video; File stays */*.
+        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            type = "*/*"
+            addCategory(Intent.CATEGORY_OPENABLE)
+            if (media) putExtra(Intent.EXTRA_MIME_TYPES, arrayOf(
+                "image/*", "video/*"
+            ))
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }, 9100)
+    }
+
+    /** Hand the tab's staged selection to the peer chooser, then send. */
+    private fun sendStaged() {
+        val tab = shareTab ?: return
+        if (!tab.hasStaged()) return
+        if (!PhoneState.link) { showFeedback(Loc.t("phone", "share_connect")); return }
+        val uris = tab.stagedUris
+        chooseSharePeer(uris, tab)
+    }
+
+    /** Text picker dialog — the typed text lands as a cache .txt file. */
+    private fun showTextDialog() {
+        val input = android.widget.EditText(this)
+        input.hint = Loc.t("phone", "text_share_hint")
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(Loc.t("phone", "text_share_title"))
+            .setView(input)
+            .setPositiveButton(Loc.t("phone", "text_share_send")) { _, _ ->
+                val text = input.text.toString()
+                if (text.isBlank()) return@setPositiveButton
+                sharePlainText(text, "lynko-text-${System.currentTimeMillis() / 1000}.txt")
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    /** Paste picker: clipboard text goes out as a .txt file. */
+    private fun sendClipboardText() {
+        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        val text = cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString()
+        if (text.isNullOrBlank()) showFeedback(Loc.t("phone", "history_empty"))
+        else sharePlainText(text, "lynko-clipboard-${System.currentTimeMillis() / 1000}.txt")
+    }
+
+    private fun sharePlainText(text: String, name: String) {
+        // file:// URI: ShareSender.stage() opens it via ContentResolver, which
+        // handles the scheme directly — no FileProvider round-trip needed.
+        val f = java.io.File(cacheDir, name)
+        f.writeText(text)
+        shareTab?.stage(android.net.Uri.fromFile(f), name)
+        sendStaged()
+    }
+
+    private fun android.content.Intent?.clipList(): List<android.net.Uri> {
+        this ?: return emptyList()
+        val out = mutableListOf<android.net.Uri>()
+        clipData?.let { cd ->
+            for (i in 0 until cd.itemCount) cd.getItemAt(i).uri?.let { out.add(it) }
+        }
+        data?.let { if (!out.contains(it)) out.add(it) }
+        return out
+    }
+
+    private fun queryName(uri: android.net.Uri): String? = try {
+        contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+            if (c.moveToFirst()) c.getString(0) else null
+        }
+    } catch (_: Exception) { null }
+
+    /** Peers with pinned (favorite) destinations first, so the picker's index
+     *  order matches LocalSend's. Returns the peer and the label to show. */
+    private fun orderedPeers(peers: List<org.java_websocket.WebSocket>): List<Pair<org.java_websocket.WebSocket, String>> {
+        val labeled = peers.map { p ->
+            p to (PeerInfo.alias.ifBlank { p.remoteSocketAddress?.address?.hostAddress ?: Loc.t("phone", "peer_desktop") })
+        }
+        return labeled.sortedByDescending { Favorites.isFavorite(this, it.second) }
+    }
+
+    private fun chooseSharePeer(uris: List<android.net.Uri>, tab: ShareTabView? = null) {
         val peers = LinkService.instance?.sharePeers().orEmpty()
         if (peers.isEmpty()) showFeedback(Loc.t("phone", "share_connect"))
         else androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle(Loc.t("phone", "share_destination"))
             // The desktop's computer name when it announced itself; the raw
             // socket IP only as a fallback (older desktop, or before hello).
-            .setItems(peers.map { PeerInfo.alias.ifBlank { it.remoteSocketAddress?.address?.hostAddress ?: Loc.t("phone", "peer_desktop") } }.toTypedArray()) { _, i ->
-                val host = peers[i].remoteSocketAddress?.address?.hostAddress ?: return@setItems
-                ShareSender.send(applicationContext, uris, host, 53317, PinStore.current(this))
+            // Favorites first — LocalSend's ♡ pin, so a recurring PC isn't
+            // buried behind however mDNS ordered the list.
+            .setItems(orderedPeers(peers).map { it.second }.toTypedArray()) { _, i ->
+                val host = orderedPeers(peers)[i].first.remoteSocketAddress?.address?.hostAddress ?: return@setItems
+                val names = tab?.let { t ->
+                    t.stagedUris.map { u -> u.toString() to (queryName(u) ?: "file.bin") }.toMap()
+                } ?: emptyMap()
+                ShareSender.send(applicationContext, uris, host, 53317, PinStore.current(this), names)
                 sharedUris = null
+                tab?.clearStaged()
+                tab?.render()
             }.setNegativeButton(android.R.string.cancel, null).show()
     }
 
@@ -495,8 +615,20 @@ class MainActivity : AppCompatActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == 9100 && resultCode == RESULT_OK) {
-            data?.data?.let { uri ->
-                chooseSharePeer(listOf(uri))
+            val tab = shareTab
+            if (tab != null) {
+                // Stage into the Selection card; the Add button opens it again.
+                val uris = data.clipList()
+                if (uris.isNotEmpty()) {
+                    // Read display names so File/Media pickers can list them.
+                    uris.forEach { u ->
+                        val n = queryName(u) ?: "file.bin"
+                        tab.stage(u, n)
+                    }
+                    tab.render()
+                    if (PhoneState.link) sendStaged()
+                    else showFeedback(Loc.t("phone", "share_connect"))
+                }
             }
             return
         }

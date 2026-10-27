@@ -17,22 +17,43 @@ import java.util.concurrent.atomic.AtomicBoolean
  * POST /api/localsend/v2/prepare-upload  → {sessionId, files:{id:token}}
  * POST /api/localsend/v2/upload?sessionId&fileId&token  (binary)
  * POST /api/localsend/v2/cancel?sessionId
+ *
+ * The wire layer (httpPost/httpPostFile/stage/mimeOf) is frozen — the UI
+ * state layer drives a [TransferSession] (LocalSend SessionStatus parity).
  */
 object ShareSender {
     private const val TAG = "lynko-send"
     private const val READ_BUF = 64 * 1024
     private const val TIMEOUT_MS = 120_000L
 
-    @Volatile var status = ""
-        private set
-    @Volatile var busy = false
-        private set
     @Volatile var onChange: (() -> Unit)? = null
     private val started = AtomicBoolean(false)
 
-    private fun state(key: String, detail: String = "") {
-        status = Loc.t("phone", key) + if (detail.isEmpty()) "" else "\n$detail"
-        android.os.Handler(android.os.Looper.getMainLooper()).post { onChange?.invoke() }
+    val session: TransferSession get() = Transfers.current
+    val busy: Boolean
+        get() = session.direction == "send" &&
+            (session.status == SessionStatus.waiting || session.status == SessionStatus.sending)
+
+    /** Full cancel URL for the live session (built at prepare-upload time). */
+    @Volatile private var cancelUrl: String? = null
+
+    /** Sender-initiated cancel: POST /cancel?sessionId → canceledBySender. */
+    fun cancel() {
+        val url = cancelUrl ?: return
+        if (session.direction != "send") return
+        session.status = SessionStatus.canceledBySender
+        session.notifyChange()
+        Thread({ runCatching { httpPost(url) } }, "lynko-send-cancel").start()
+    }
+
+    /** Per-file cancel (LocalSend's Skip button on a file row). The upload
+     *  loop stops feeding bytes at the next 64 KB chunk and the desktop's own
+     *  size/checksum check discards the truncated file. */
+    fun skipFile(id: String) {
+        val f = session.files.firstOrNull { it.id == id } ?: return
+        if (f.status != FileStatus.queue && f.status != FileStatus.sending) return
+        f.cancel = true
+        session.notifyChange()
     }
 
     private fun mimeOf(name: String): String {
@@ -50,13 +71,21 @@ object ShareSender {
             else -> "application/octet-stream"
         }
     }
+
     /** Send one or more files (Share Sheet) to a desktop running a LocalSend v2.2 server. */
-    fun send(context: Context, uris: List<Uri>, host: String, port: Int = 53317, pin: String? = null) {
+    fun send(
+        context: Context,
+        uris: List<Uri>,
+        host: String,
+        port: Int = 53317,
+        pin: String? = null,
+        displayNames: Map<String, String> = emptyMap(),
+    ) {
         if (uris.isEmpty()) return
         if (!started.compareAndSet(false, true)) return
-        busy = true
         val app = context.applicationContext
-        state("share_preparing")
+        val s = Transfers.start("send")
+        s.onChange = { onChange?.invoke() }
         Thread({
             // Staged in the picker order, so the desktop lists the files the
             // way the user selected them. Staging reads every content:// URI
@@ -69,9 +98,17 @@ object ShareSender {
             try {
                 for (u in uris) {
                     val st = stage(app, u) ?: error("Cannot open selected file")
-                    staged.add(st)
+                    // file:// URIs (Text/Paste temp files) carry no display
+                    // name through the resolver — override without touching
+                    // the frozen stage() itself.
+                    val dn = displayNames[u.toString()]
+                    staged.add(if (dn != null) st.copy(name = dn, mime = mimeOf(dn)) else st)
                 }
-                state("share_waiting", if (staged.size == 1) staged[0].name else Loc.t("phone", "file_count").replace("{n}", staged.size.toString()))
+                s.alias = alias
+                s.files = staged.map { TransferFile(it.id, it.name, it.size) }
+                s.sessionTotal = staged.sumOf { it.size }
+                s.status = SessionStatus.waiting
+                s.notifyChange()
                 val info = JSONObject()
                     .put("alias", alias)
                     .put("version", "2.2")
@@ -103,41 +140,89 @@ object ShareSender {
                     "application/json",
                 )
                 if (code == 204) {
-                    state("share_sent", if (staged.size == 1) staged[0].name else Loc.t("phone", "file_count").replace("{n}", staged.size.toString()))
+                    // Nothing to transfer per spec — treat as finished.
+                    s.finish()
                     return@Thread
                 }
+                if (code == 403) { s.status = SessionStatus.declined; s.notifyChange(); return@Thread }
+                if (code == 409) { s.status = SessionStatus.recipientBusy; s.notifyChange(); return@Thread }
+                if (code == 401) { s.status = SessionStatus.tooManyAttempts; s.notifyChange(); return@Thread }
                 if (code != 200) error("prepare failed: $code $body")
                 val resp = JSONObject(body)
                 sessionId = resp.getString("sessionId")
+                s.sessionId = sessionId
+                s.status = SessionStatus.sending
+                s.notifyChange()
+                cancelUrl = "$base/cancel?sessionId=$sessionId$pinArg"
                 val tokens = resp.getJSONObject("files")
-                val label = if (staged.size == 1) staged[0].name else Loc.t("phone", "file_count").replace("{n}", staged.size.toString())
-                state("share_sending", label)
 
                 // POST /upload?sessionId&fileId&token — one binary POST per file
                 // (spec 4.2). The desktop drops each file into Downloads as it
                 // lands, so a failure halfway still leaves the earlier files.
+                val total = s.sessionTotal
+                var baseWritten = 0L
                 for (i in staged.indices) {
+                    if (s.status == SessionStatus.canceledBySender) break
                     val st = staged[i]
+                    val tf = s.files.firstOrNull { it.id == st.id }
+                    tf?.status = FileStatus.sending
                     val token = tokens.getString(st.id)
-                    val prefix = if (staged.size > 1) "($i+1/${staged.size}) " else ""
                     val (c, b) = httpPostFile(
                         "$base/upload?sessionId=$sessionId&fileId=${st.id}&token=$token",
                         st.file, st.size,
-                    ) { written -> state("share_sending", "$prefix${st.name} · $written / ${st.size}") }
-                    if (c == 422) error("checksum mismatch: ${st.name}")
+                    ) { written ->
+                        tf?.written = written
+                        s.onBytes(baseWritten + written, total)
+                        // Per-file skip: stop streaming mid-file. Returning false
+                        // closes the POST early; the receiver's size check throws
+                        // the partial file away.
+                        tf?.cancel != true
+                    }
+                    if (tf?.cancel == true) {
+                        tf?.status = FileStatus.skipped
+                        s.notifyChange()
+                        continue
+                    }
+                    if (c == 422) {
+                        // 422 checksum mismatch → per-file Error (LocalSend).
+                        tf?.status = FileStatus.failed
+                        s.notifyChange()
+                        break
+                    }
                     if (c != 200) error("upload failed: $c $b")
+                    tf?.status = FileStatus.finished
+                    tf?.written = st.size
+                    baseWritten += st.size
+                    s.onBytes(baseWritten, total)
                 }
-                state("share_sent", label)
+                if (s.status != SessionStatus.canceledBySender) {
+                    // History: record every file the desktop actually saved.
+                    if (s.errorCount == 0 && s.status != SessionStatus.finishedWithErrors) {
+                        s.files.forEach { h ->
+                            if (h.status == FileStatus.finished)
+                                HistoryStore.add(app, h.name, h.size, incoming = false)
+                        }
+                    }
+                    s.finish()
+                }
             } catch (e: Exception) {
                 Log.w(TAG, "send failed: ${e.message}")
+                if (s.status != SessionStatus.canceledBySender &&
+                    s.status != SessionStatus.declined &&
+                    s.status != SessionStatus.recipientBusy &&
+                    s.status != SessionStatus.tooManyAttempts
+                ) {
+                    s.files.forEach { if (it.status != FileStatus.finished) it.status = FileStatus.failed }
+                    s.status = SessionStatus.finishedWithErrors
+                    s.notifyChange()
+                }
                 val sid = sessionId
                 if (sid != null) runCatching { httpPost("$base/cancel?sessionId=$sid$pinArg") }
-                state("share_failed", e.message ?: Loc.t("phone", "share_failed"))
             } finally {
                 // Staged cache copies are scratch — drop them all, sent or not,
                 // so a cancelled batch never fills the phone's cache.
                 staged.forEach { runCatching { it.file.delete() } }
-                busy = false
+                cancelUrl = null
                 started.set(false)
                 android.os.Handler(android.os.Looper.getMainLooper()).post { onChange?.invoke() }
             }
@@ -164,7 +249,7 @@ object ShareSender {
     }
 
     /** Stream a whole file as one binary POST with a fixed Content-Length. */
-    private fun httpPostFile(url: String, file: java.io.File, total: Long, onChunk: (Long) -> Unit): Pair<Int, String> {
+    private fun httpPostFile(url: String, file: java.io.File, total: Long, onChunk: (Long) -> Boolean): Pair<Int, String> {
         val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
         conn.connectTimeout = 5000
         conn.readTimeout = TIMEOUT_MS.toInt()
@@ -177,11 +262,11 @@ object ShareSender {
                 val buf = ByteArray(READ_BUF)
                 var written = 0L
                 while (true) {
+                    if (!onChunk(written)) break
                     val n = input.read(buf)
                     if (n < 0) break
                     out.write(buf, 0, n)
                     written += n
-                    onChunk(written)
                 }
             }
         }

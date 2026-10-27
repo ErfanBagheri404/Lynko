@@ -18,6 +18,7 @@ import fi.iki.elonen.NanoHTTPD
 import org.java_websocket.WebSocket
 import org.java_websocket.handshake.ClientHandshake
 import org.java_websocket.server.WebSocketServer
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.InetSocketAddress
 import java.util.concurrent.atomic.AtomicReference
@@ -358,6 +359,15 @@ class LinkService : Service() {
             deviceName = android.os.Build.MODEL ?: "Android",
             pin = PinStore.current(this),
             onConsentRequest = { session, answer ->
+                // Receive-side LocalSend session: consent gate == waiting, the
+                // ShareTabView progress panel paints the rest.
+                val ts = Transfers.start("receive")
+                ts.sessionId = session.id
+                ts.alias = session.senderAlias
+                ts.files = session.files.map { TransferFile(it.id, it.name, it.size) }
+                ts.sessionTotal = session.files.sumOf { it.size }
+                ts.status = SessionStatus.waiting
+                ts.notifyChange()
                 // Launch a real Activity — a dialog from a Service context
                 // would throw (no window token). Result releases the latch.
                 val latch = java.util.concurrent.CountDownLatch(1)
@@ -370,10 +380,18 @@ class LinkService : Service() {
                             val kb = session.files.sumOf { it.size } / 1024
                             if (kb > 1024) "${kb / 1024} MB" else "$kb KB"
                         })
+                        .putExtra(TransferConsentActivity.EXTRA_NAMES,
+                            ArrayList(session.files.map { it.name }))
+                        .putExtra(TransferConsentActivity.EXTRA_SIZES,
+                            session.files.map { it.size }.toLongArray())
                         .putExtra("sessionId", session.id)
                     startActivity(i)
                     TransferConsentHub.pending[session.id] = { ok ->
                         answer(ok)
+                        if (!ok && ts.status == SessionStatus.waiting) {
+                            ts.status = SessionStatus.declined
+                            ts.notifyChange()
+                        }
                         latch.countDown()
                     }
                 }
@@ -382,12 +400,33 @@ class LinkService : Service() {
             },
             onProgress = { fileId, written, total ->
                 Log.d(TAG, "tx $fileId: $written/$total")
+                val ts = Transfers.current
+                if (ts.direction == "receive" && ts.visible) {
+                    ts.files.firstOrNull { it.id == fileId }?.let {
+                        if (it.status == FileStatus.queue) it.status = FileStatus.sending
+                        it.written = written
+                    }
+                    ts.onBytes(ts.files.sumOf { it.written }, ts.sessionTotal)
+                }
             },
             onFileDone = { fileId, ok, path, shaOk ->
                 Log.i(TAG, "tx done $fileId ok=$ok sha=$shaOk path=$path")
+                val ts = Transfers.current
+                if (ts.direction == "receive") {
+                    val f = ts.files.firstOrNull { it.id == fileId }
+                    f?.let {
+                        it.status = if (ok) FileStatus.finished else FileStatus.failed
+                        if (ok) it.written = it.size
+                    }
+                    if (ok && path != null && f != null)
+                        HistoryStore.add(this, f.name, f.size, incoming = true)
+                    ts.notifyChange()
+                }
             },
             onSessionDone = { accepted, rejected ->
                 Log.i(TAG, "tx session done accepted=$accepted rejected=$rejected")
+                val ts = Transfers.current
+                if (ts.direction == "receive" && !ts.terminal) ts.finish()
             },
             )
         }
@@ -679,6 +718,10 @@ class LinkService : Service() {
             connectedClients = (connectedClients - 1).coerceAtLeast(0)
             if (connectedClients == 0) { PhoneState.setLink(false); PhoneState.broadcaster = null }
             LinkNotifier.broadcaster.set(null)
+            // "Do not disturb" is a per-session mirror setting: a dead link
+            // must not leave the phone silently swallowing notifications for
+            // the NEXT session.
+            LinkNotifier.dnd.set(false)
             PhoneAudio.unmute(applicationContext)
             releaseWifiLowLatency()
             releaseScreenWakeLock()
@@ -881,6 +924,28 @@ class LinkService : Service() {
             "stop_audio" -> {
                 audioSession.getAndSet(null)?.stop()
                 sendEvent(conn, "log", JSONObject().put("msg", "audio stopped"))
+            }
+            // Samsung Flow parity: Smart View bar "Do not disturb" — while on,
+            // phone notifications stop reaching the desktop.
+            "dnd" -> {
+                val on = (d as? JSONObject)?.optBoolean("on", false) ?: false
+                LinkNotifier.dnd.set(on)
+                sendEvent(conn, "log", JSONObject().put("msg", "dnd $on"))
+            }
+            // Samsung Flow parity: Favorites picker needs the phone's apps.
+            "list_apps" -> {
+                val apps = JSONArray()
+                for ((pkg, label) in AppCatalog.list(applicationContext)) {
+                    apps.put(JSONObject().put("package", pkg).put("label", label))
+                }
+                sendEvent(conn, "app_list", JSONObject().put("apps", apps))
+            }
+            // Samsung Flow parity: launch a favorite app on the phone.
+            "launch_app" -> {
+                val pkg = (d as? JSONObject)?.optString("package", "") ?: ""
+                val ok = AppCatalog.launch(applicationContext, pkg)
+                sendEvent(conn, "log", JSONObject()
+                    .put("msg", if (ok) "launched $pkg" else "cannot launch $pkg"))
             }
             else -> sendEvent(conn, "log", JSONObject().put("msg", "unknown command: $t"))
         }

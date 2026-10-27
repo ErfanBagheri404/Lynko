@@ -28,10 +28,20 @@ pub struct Session {
     /// fileId -> token (spec 4.1 reply)
     pub tokens: HashMap<String, String>,
     /// Sender IP the session was created from (403 guard on upload).
-    pub sender_ip: String,
-    /// Created-at timestamp for expiry sweep (120s, same as sender timeout).
-    pub created_at: std::time::Instant,
-}
+        pub sender_ip: String,
+        /// Created-at timestamp for expiry sweep (120s, same as sender timeout).
+        pub created_at: std::time::Instant,
+        /// fileId in offer order — gives every share_status event a stable index.
+        pub order: Vec<String>,
+        /// Declared size parallel to `order` (survives files being removed on done).
+        pub sizes: Vec<u64>,
+        /// [{id,name,size}] in offer order — re-sent on every progress event.
+        pub list: Vec<serde_json::Value>,
+        /// Files that failed (checksum/abort) — feeds the "finished" errorCount.
+        pub failed_count: usize,
+        /// Per-file bytes written so far, parallel to `order`.
+        pub written: Vec<u64>,
+    }
 
 pub struct FileEntry {
     pub id: String,
@@ -259,6 +269,12 @@ fn handle(app: tauri::AppHandle, mut request: tiny_http::Request) {
         ("POST", "/api/localsend/v2/cancel") => {
             if let Some(sid) = params.get("sessionId") {
                 sessions().lock().unwrap().remove(sid);
+                // Mirrors LocalSend canceledBySender — the UI shows it on the
+                // progress panel instead of leaving a stuck bar.
+                let _ = app.emit(
+                    "share_status",
+                    serde_json::json!({ "status": "canceledBySender", "sessionId": sid }),
+                );
             }
             let _ = request.respond(json(200, "{}"));
         }
@@ -323,6 +339,8 @@ fn prepare_upload(
             "mime": f.get("fileType").and_then(|v| v.as_str()).unwrap_or("application/octet-stream"),
         }));
     }
+    // HashMap iteration is random; sort so both sides see picker order.
+    list.sort_by_key(|f| f["name"].as_str().unwrap_or("").to_string());
     let _ = app.emit(
         "share_offer",
         serde_json::json!({
@@ -337,11 +355,19 @@ fn prepare_upload(
     }
 
     let sid = uuid::Uuid::new_v4().to_string();
+    let order: Vec<String> = list.iter().map(|f| f["id"].as_str().unwrap_or("").to_string()).collect();
+    let sizes: Vec<u64> = list.iter().map(|f| f["size"].as_u64().unwrap_or(0)).collect();
+    let written = vec![0u64; order.len()];
     let mut session = Session {
         files: HashMap::new(),
         tokens: HashMap::new(),
         sender_ip: ip.to_string(),
         created_at: std::time::Instant::now(),
+        order,
+        sizes,
+        list: list.clone(),
+        failed_count: 0,
+        written,
     };
     let mut reply_tokens = serde_json::Map::new();
     for (key, f) in &files {
@@ -374,6 +400,16 @@ fn prepare_upload(
         );
     }
     sessions().lock().unwrap().insert(sid.clone(), session);
+    let _ = app.emit(
+        "share_status",
+        serde_json::json!({
+            "status": "accepted",
+            "sessionId": sid,
+            "alias": alias,
+            "count": list.len(),
+            "files": list,
+        }),
+    );
     let out = serde_json::json!({ "sessionId": sid, "files": reply_tokens });
     json(200, &out.to_string())
 }
@@ -515,51 +551,184 @@ fn upload(
     };
 
     let dir = download_dir();
-    let store = store_stream(
-        &dir,
-        &name,
-        expected.as_deref(),
-        request.as_reader(),
-        size,
-        |written, total| {
-            let _ = app.emit(
-                "share_status",
-                serde_json::json!({
-                    "status": "receiving", "name": name, "written": written, "size": total
-                }),
-            );
-        },
-    );
-    let final_path = match store {
-        Ok(p) => p,
-        Err(e) => {
-            let _ = app.emit(
-                "share_status",
-                serde_json::json!({
-                    "status": "failed", "error": e.code(), "name": name
-                }),
-            );
-            return json(e.status(), &e.code());
+        let sid2 = sid.clone();
+        let name2 = name.clone();
+        let file_id2 = file_id.clone();
+        let mut last = std::time::Instant::now() - std::time::Duration::from_secs(1);
+        let store = store_stream(
+            &dir,
+            &name,
+            expected.as_deref(),
+            request.as_reader(),
+            size,
+            move |written, total| {
+                // Aggregate for the "Total" row, throttled to ≤4/s; per-file
+                // written/total rides along so the current file bar can animate.
+                let idx = {
+                    let mut all = sessions().lock().unwrap();
+                    let Some(s) = all.get_mut(&sid2) else { return };
+                    let Some(i) = s.order.iter().position(|id| id == &file_id2) else { return };
+                    if let Some(w) = s.written.get_mut(i) {
+                        *w = written;
+                    }
+                    i
+                };
+                let now = std::time::Instant::now();
+                if now.duration_since(last) < std::time::Duration::from_millis(250) {
+                    return;
+                }
+                last = now;
+                let (total_written, total_size, count, files) = {
+                    let all = sessions().lock().unwrap();
+                    let Some(s) = all.get(&sid2) else { return };
+                    let tw: u64 = s.written.iter().sum();
+                    (tw, s.sizes.iter().sum::<u64>(), s.order.len(), s.list.clone())
+                };
+                let _ = app.emit(
+                    "share_status",
+                    serde_json::json!({
+                        "status": "receiving", "name": name2, "written": written,
+                        "size": total, "sessionId": sid2, "fileIndex": idx,
+                        "totalWritten": total_written, "totalSize": total_size,
+                        "count": count, "files": files,
+                    }),
+                );
+            },
+        );
+        let final_path = match store {
+            Ok(p) => p,
+            Err(e) => {
+                // Failed file: bump errorCount and re-emit aggregate so the UI
+                // can show "Finished with error" without waiting for more.
+                let (count, files) = {
+                    let mut all = sessions().lock().unwrap();
+                    let Some(s) = all.get_mut(&sid) else { return json(e.status(), &e.code()) };
+                    s.failed_count += 1;
+                    (s.order.len(), s.list.clone())
+                };
+                let _ = app.emit(
+                    "share_status",
+                    serde_json::json!({
+                        "status": "failed", "error": e.code(), "name": name,
+                        "sessionId": sid, "count": count, "files": files,
+                    }),
+                );
+                return json(e.status(), &e.code());
+            }
+        };
+        let path = final_path.to_string_lossy().to_string();
+        let done = {
+            let mut all = sessions().lock().unwrap();
+            if let Some(session) = all.get_mut(&sid) {
+                session.files.remove(&file_id);
+                session.tokens.remove(&file_id);
+            }
+            all.is_empty()
+        };
+        let (total_written, total_size, count, files) = sessions()
+            .lock()
+            .unwrap()
+            .get(&sid)
+            .map(|s| {
+                (
+                    s.written.iter().sum::<u64>(),
+                    s.sizes.iter().sum::<u64>(),
+                    s.order.len(),
+                    s.list.clone(),
+                )
+            })
+            .unwrap_or_default();
+        if done {
+            // Whole session complete — record history entry.
+            history_add(HistoryEntry {
+                direction: "incoming".into(),
+                name: list_name(&files),
+                files: files.len() as u64,
+                size: total_size,
+                time: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0),
+                dir: download_dir().to_string_lossy().to_string(),
+            });
         }
-    };
-    let path = final_path.to_string_lossy().to_string();
-    let done = {
-        let mut all = sessions().lock().unwrap();
-        if let Some(session) = all.get_mut(&sid) {
-            session.files.remove(&file_id);
-            session.tokens.remove(&file_id);
+        let _ = app.emit(
+            "share_status",
+            serde_json::json!({
+                "status": if done { "saved" } else { "receiving" },
+                "name": name, "path": path,
+                "sessionId": sid, "fileId": file_id, "written": 0, "size": 0,
+                "totalWritten": total_written, "totalSize": total_size,
+                "count": count, "files": files,
+            }),
+        );
+        json(200, "{}")
+    }
+
+    /// Best display name for a file list (mirrors the UI's "x of y" summary).
+    fn list_name(files: &[serde_json::Value]) -> String {
+        match files.first().and_then(|f| f["name"].as_str()) {
+            Some(n) if files.len() <= 1 => n.to_string(),
+            Some(n) => format!("{n} (+{})", files.len() - 1),
+            None => "files".into(),
         }
-        all.is_empty()
-    };
-    let _ = app.emit(
-        "share_status",
-        serde_json::json!({
-            "status": if done { "saved" } else { "receiving" },
-            "name": name, "path": path
-        }),
-    );
-    json(200, "{}")
-}
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* receive history — history.json next to pairs.json                  */
+
+    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+    pub struct HistoryEntry {
+        /// "incoming" (desktop received) or "outgoing" (desktop sent).
+        pub direction: String,
+        /// Display name: single file name, or "first (+n)".
+        pub name: String,
+        pub files: u64,
+        pub size: u64,
+        /// Unix seconds.
+        pub time: u64,
+        /// Directory the files were saved to (incoming) or picked from.
+        pub dir: String,
+    }
+
+    static HISTORY_PATH: OnceLock<std::path::PathBuf> = OnceLock::new();
+
+    /// Called once at startup so history_add needs no AppHandle.
+    pub fn init_history(path: std::path::PathBuf) {
+        let _ = HISTORY_PATH.set(path);
+    }
+
+    fn history_add(entry: HistoryEntry) {
+        let Some(path) = HISTORY_PATH.get() else { return };
+        let mut list: Vec<HistoryEntry> = std::fs::read_to_string(path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default();
+        list.insert(0, entry);
+        list.truncate(200);
+        if let Ok(json) = serde_json::to_string_pretty(&list) {
+            let _ = std::fs::create_dir_all(path.parent().unwrap());
+            let _ = std::fs::write(path, json);
+        }
+    }
+
+    /// Tauri command: the receive-history list for the History panel.
+    #[tauri::command]
+    pub fn history_list() -> Vec<HistoryEntry> {
+        HISTORY_PATH
+            .get()
+            .and_then(|p| std::fs::read_to_string(p).ok())
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default()
+    }
+
+    /// Tauri command: wipe the receive history.
+    #[tauri::command]
+    pub fn history_clear() {
+        if let Some(p) = HISTORY_PATH.get() {
+            let _ = std::fs::write(p, "[]");
+        }
+    }
 
 /// POST /api/localsend/v2/prepare-download (spec 4.4) — reverse transfer.
 /// Body: {"info":{...},"files":{"<id>":{"id","fileName","size",...}}}

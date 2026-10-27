@@ -8,6 +8,12 @@ import {readFileSync} from 'node:fs';
 test('tap mapping uses painted letterbox rect, not img element box', () => {
   const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
   const norm = app.slice(app.indexOf('const norm = (ev: React.PointerEvent)'), app.indexOf('const onTap ='));
-  assert.ok(norm.includes('naturalWidth'), 'norm must account for intrinsic image size');
+  // The intrinsic size comes from intrRef (set from the decoded bitmap's
+  // width/height). A literal naturalWidth read is equally valid, so accept
+  // either — what must NOT happen is falling back to the element box.
+  assert.ok(
+    norm.includes('intrRef.current.w') || norm.includes('naturalWidth'),
+    'norm must account for intrinsic image size',
+  );
   assert.ok(!norm.includes('?? (ev.currentTarget'), 'element box fallback still used for mapping');
 });

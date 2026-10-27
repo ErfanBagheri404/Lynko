@@ -38,3 +38,5 @@ NUL
 # Untracked tooling / test artifacts
 .impeccable/
 sim/downloads/
+.hermes/
+/downloads/

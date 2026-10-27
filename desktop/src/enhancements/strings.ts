@@ -11,6 +11,14 @@ const en = {
  hotkeys:'Global hotkeys', hotkeysHint:'Work even when Lynko is in the background. Ctrl+Shift+L shows or hides the window, Ctrl+Shift+M toggles the mirror. Both are free — pick different ones if they clash with another app.', hotkeyConflict:'Lynko could not claim that hotkey; another app already owns it. Hotkeys stay off until it is free.',
  updates:'Check for updates', updatesDesc:'New versions from GitHub releases', version:'Version', checkNow:'Check now', checking:'Checking…', uptodate:'You are up to date', updateAvailable:'Update available', checkFailed:'Check failed', checkOffline:'check your internet connection', autoCheck:'Check automatically on launch', whatsnew:'What is new', updated:'Lynko updated', download:'Download', later:'Later', published:'Published',
  quality:'Mirror quality', qualityDesc:'Applies live without restarting capture. The phone still steps down automatically on a busy link.', q_eco:'Eco', q_balanced:'Balanced', q_sharp:'Sharp', q_native:'Native',
+ shareOfferTitle:'{alias} wants to send you {n} file(s)', shareSaveHint:'Files are saved to your Downloads folder. Existing files will not be overwritten.',
+ shareDecline:'Decline', shareAccept:'Accept', shareClose:'Close',
+ shareReceiving:'Receiving files', shareFiles:'Files: {curr} / {total}', shareSize:'Size: {curr} / {total}', shareSpeed:'Speed: {speed}/s',
+ shareWaiting:'Waiting for response…', shareFinished:'Finished', shareFinishedError:'Finished with error', shareCanceled:'Canceled by sender',
+ shareQ:'Queue', shareSkip:'Skipped', shareErr:'Error', shareDone:'Done', shareSending:'Sending',
+ shareHistory:'History', shareOpenFolder:'Open folder', shareDeleteHistory:'Delete history', shareEmptyHistory:'The history is empty.', sharePickRecipient:'Choose the phone to receive your files', shareSendingTo:'To: {name}',
+ shareTarget:'Sending to', shareTargetNone:'No phone linked', shareConnected:'Connected',
+ shareSameWifi:'Ensure the phone is on the same Wi-Fi network.', shareTroubleshoot:'Troubleshoot',
 };
 const fa: Record<keyof typeof en,string> = {
  health:'سلامت اتصال', unknown:'گزارش نشده', disconnected:'قطع اتصال', unavailable:'گوشی پشتیبانی نمی‌کند', idle:'ضبط متوقف است', waiting:'هنوز فریمی نرسیده', stalled:'بیش از ۵ ثانیه بدون فریم', live:'در حال دریافت فریم', locked:'صفحه گوشی خاموش یا قفل است',
@@ -24,6 +32,14 @@ const fa: Record<keyof typeof en,string> = {
  hotkeys:'کلیدهای سراسری', hotkeysHint:'حتی وقتی لینکو در پس‌زمینه است کار میکند. Ctrl+Shift+L پنجره را نشان یا پنهان میکند و Ctrl+Shift+M آینه را روشن/خاموش میکند.', hotkeyConflict:'Lynko نتوانست آن کلید را بگیرد؛ برنامه دیگری زودتر آن را دارد.',
  updates:'بررسی به‌روزرسانی', updatesDesc:'نسخه‌های جدید از انتشارهای گیت‌هاب', version:'نسخه', checkNow:'بررسی کن', checking:'در حال بررسی…', uptodate:'به‌روز هستید', updateAvailable:'نسخه جدید موجود است', checkFailed:'بررسی ناموفق بود', checkOffline:'اتصال اینترنت را بررسی کنید', autoCheck:'بررسی خودکار هنگام اجرا', whatsnew:'تازه‌ها', updated:'Lynko به‌روز شد', download:'دانلود', later:'بعداً', published:'انتشار',
  quality:'کیفیت آینه', qualityDesc:'بدون راه‌اندازی دوباره، زنده اعمال می‌شود. در شبکه شلوغ گوشی همچنان خودکار کیفیت را پایین می‌آورد.', q_eco:'کم‌مصرف', q_balanced:'متعادل', q_sharp:'تیز', q_native:'بومی',
+ shareOfferTitle:'{alias} می‌خواهد {n} فایل برایتان بفرستد', shareSaveHint:'فایل‌ها در پوشه «Downloads» ذخیره می‌شوند. فایل موجود جایگزین نمی‌شود.',
+ shareDecline:'رد کردن', shareAccept:'پذیرفتن', shareClose:'بستن',
+ shareReceiving:'دریافت فایل‌ها', shareFiles:'فایل‌ها: {curr} / {total}', shareSize:'حجم: {curr} / {total}', shareSpeed:'سرعت: {speed}/ث',
+ shareWaiting:'در انتظار پاسخ…', shareFinished:'پایان', shareFinishedError:'پایان با خطا', shareCanceled:'لغو توسط فرستنده',
+ shareQ:'صف', shareSkip:'رد شده', shareErr:'خطا', shareDone:'انجام شد', shareSending:'در حال ارسال',
+ shareHistory:'تاریخچه', shareOpenFolder:'باز کردن پوشه', shareDeleteHistory:'پاک کردن تاریخچه', shareEmptyHistory:'تاریخچه خالی است.', sharePickRecipient:'برای ارسال، ابتدا گوشی گیرنده را انتخاب کنید', shareSendingTo:'گیرنده: {name}',
+ shareTarget:'ارسال به', shareTargetNone:'هیچ گوشی‌ای متصل نیست', shareConnected:'متصل',
+ shareSameWifi:'مطمئن شوید گوشی روی همان شبکه وای‌فای است.', shareTroubleshoot:'عیب‌یابی',
 };
 export type EnhancementKey = keyof typeof en;
 export const text = (lang:Lang, key:EnhancementKey) => (lang === 'fa' ? fa : en)[key];

@@ -161,3 +161,34 @@ export const IconExpand = ic(
     <path d="M9.5 20H4v-5.5" />
   </>
 );
+
+/* Samsung Flow parity rail controls */
+
+export const IconCamera = ic(
+  <>
+    <path d="M3 8.5h3l1.5-2.5h8L17 8.5h3a1.5 1.5 0 0 1 1.5 1.5v8A1.5 1.5 0 0 1 20 19.5H4A1.5 1.5 0 0 1 2.5 18v-8A1.5 1.5 0 0 1 4 8.5" />
+    <circle cx="12" cy="13.5" r="3.5" />
+  </>
+);
+
+export const IconBell = ic(
+  <>
+    <path d="M6 9a6 6 0 0 1 12 0c0 4.5 1.5 6 1.5 6h-15S6 13.5 6 9" />
+    <path d="M10 18.5a2 2 0 0 0 4 0" />
+  </>
+);
+
+export const IconBellOff = ic(
+  <>
+    <path d="M8.2 5.6A6 6 0 0 1 18 9c0 4.5 1.5 6 1.5 6h-11" />
+    <path d="M6 9v6H4.5S6 13.5 6 9" />
+    <path d="M10 18.5a2 2 0 0 0 4 0" />
+    <path d="M3.5 3.5l17 17" />
+  </>
+);
+
+export const IconPin = ic(
+  <>
+    <path d="M12 3l2.4 5.3 5.6.6-4.2 3.9 1.2 5.7L12 15.9l-5 2.6 1.2-5.7L4 8.9l5.6-.6z" />
+  </>
+);
