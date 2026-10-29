@@ -266,6 +266,10 @@ object ShareSender {
             s.notifyChange()
             cancelUrl = "$base/cancel?sessionId=$sessionId$pinArg"
             val tokens = resp.getJSONObject("files")
+            // Receiver-side resume map (additive Lynko extension): the desktop
+            // reports per-file bytes held at top level; a transfer-aware
+            // sender streams only file[have..]. String token → offset 0.
+            val haveObj = resp.optJSONObject("have")
 
             // POST /upload?sessionId&fileId&token — one binary POST per file
             // (spec 4.2). The desktop drops each file into Downloads as it
@@ -288,7 +292,11 @@ object ShareSender {
                 // .part copy instead of overwriting; an offset equal to size
                 // sends the zero-length "file-done" body. An offset outside
                 // 0..size is nonsense — restart from 0.
-                val raw = (node as? JSONObject)?.optLong("offset", 0L) ?: 0L
+                val raw = when {
+                    node is JSONObject -> node.optLong("offset", 0L)
+                    haveObj != null -> haveObj.optLong(st.id, 0L)
+                    else -> 0L
+                }
                 val from = if (raw in 0..st.size) raw else 0L
                 val (c, b) = httpPostFile(
                     "$base/upload?sessionId=$sessionId&fileId=${st.id}&token=$token" +
