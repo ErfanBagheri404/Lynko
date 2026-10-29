@@ -40,6 +40,8 @@ object LinkNotifier {
         // Called from the notification listener thread — a send on a socket
         // closing underneath throws and kills the process (and the
         // accessibility service with it). Swallow: the notification is gone.
+        // ?: pitfall — "a ?: b != null" makes otp a String-or-Boolean union; compute it first.
+        val otp = OTP.find(text)?.value ?: OTP.find(title)?.value
         val json = try {
             JSONObject()
                 .put("t", "notification")
@@ -48,7 +50,7 @@ object LinkNotifier {
                     .put("title", title)
                     .put("body", text)
                     .put("notifId", notifId)
-                    .put("otp", OTP.find(text)?.value ?: OTP.find(title)?.value != null))
+                    .put("otp", otp != null))
         } catch (_: Exception) { return }
         try { send(json.toString()) } catch (_: Exception) {}
     }
@@ -64,7 +66,7 @@ object LinkNotifier {
         // after and must not forward this removal (loop guard).
         selfCancelled.add("$pkg|$notifId")
         return try {
-            l.cancelNotification(tag, notifId)
+            l.cancelNotification(pkg, tag, notifId)
             true
         } catch (_: Exception) {
             selfCancelled.remove("$pkg|$notifId")
