@@ -13,7 +13,7 @@ import {filterNotification, isAppSuppressed} from './enhancements/logic.mjs';
 import {HealthPanel, FeatureControls, PrivacyControls} from './enhancements/Panels';
 import {UpdateSection} from './enhancements/Update';
 import {QualitySection, presetDims} from './enhancements/Quality';
-import {text as extra} from './enhancements/strings';
+import {text as extra, type EnhancementKey} from './enhancements/strings';
 import './enhancements/styles.css';
 
 /* ------------------------------------------------------------------ */
@@ -124,6 +124,8 @@ interface Toast {
   id: number;
   msg: string;
   kind: "info" | "ok" | "err";
+  /** OTP found in a mirrored notification — rendered as a Copy-code button. */
+  code?: string;
 }
 
 let toastUid = 0;
@@ -131,14 +133,48 @@ let toastUid = 0;
 function useToasts() {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
-  const push = useCallback((msg: string, kind: Toast["kind"] = "info") => {
+  const push = useCallback((msg: string, kind: Toast["kind"] = "info", code?: string) => {
     const id = ++toastUid;
-    setToasts((t) => [...t.slice(-4), { id, msg, kind }]);
+    setToasts((t) => [...t.slice(-4), { id, msg, kind, code }]);
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4000);
   }, []);
 
   return { toasts, push };
 }
+
+/* ------------------------------------------------------------------ */
+/* OTP detection + per-device feature caps                             */
+/* ------------------------------------------------------------------ */
+
+/* One-time codes in mirrored notification text: 4–8 digits not adjacent to
+   any other digit. The lookarounds ARE the production-number guard: a phone
+   number or order id (9+ digit run) can never match a substring, because
+   every inner 4–8 digit window is digit-adjacent on both sides.
+   ponytail: no word-context heuristics ("code", "PIN"); add only if a real
+   false positive shows up. */
+const OTP_RE = /(?<!\d)\d{4,8}(?!\d)/;
+const otpOf = (s: string) => s.match(OTP_RE)?.[0] ?? null;
+
+/* Per-device feature switches (NectarLink parity): each paired phone keeps
+   its own allow-list, persisted as `lynko-caps-<device-id>` (JSON). UI-only
+   for now — the link layer does not consult it yet (a future track wires
+   the backend), so flipping a switch changes storage and nothing else. */
+type CapKey = "clipboard" | "files" | "notifications" | "screen" | "audio" | "desktop-control";
+const CAP_KEYS: CapKey[] = ["clipboard", "files", "notifications", "screen", "audio", "desktop-control"];
+const CAP_LABELS: Record<CapKey, EnhancementKey> = {
+  clipboard: "clipboard", files: "files", notifications: "notifications",
+  screen: "screen", audio: "audio", "desktop-control": "desktopControl",
+};
+// Sensitive features stay OFF until the user allows them (NectarLink default).
+const CAP_DEFAULTS: Record<CapKey, boolean> = {
+  clipboard: true, files: true, notifications: true, screen: false, audio: false, "desktop-control": false,
+};
+const readCaps = (id: string): Record<CapKey, boolean> => {
+  try {
+    const raw = JSON.parse(localStorage.getItem(`lynko-caps-${id}`) ?? "{}");
+    return { ...CAP_DEFAULTS, ...(raw as Partial<Record<CapKey, boolean>>) };
+  } catch { return { ...CAP_DEFAULTS }; }
+};
 
 /* ------------------------------------------------------------------ */
 /* App                                                                  */
@@ -414,6 +450,10 @@ export default function App() {
         // to 0 silently breaks every notification reply.
         const nid = ((ev.d.notif_id ?? ev.d.notifId) as number) ?? 0;
         setNotes((n) => [{ id: ++toastUid, app, title, body, at: Date.now(), notifId: nid }, ...n].slice(0, 50));
+        // OTP parity: surface the code with a one-click Copy button. The
+        // native OS toast cannot carry actions, so the in-app toast does.
+        const otp = otpOf(`${title} ${body}`);
+        if (otp) toast(`${extra(prefsLangRef.current, "otpToast")}: ${otp}`, "ok", otp);
         // Native OS toast (Samsung Flow parity: alerts while you work on the
         // PC). Honors the persisted Settings → desktop-notifications toggle;
         // read from localStorage so it works from any component.
@@ -466,6 +506,26 @@ export default function App() {
     if (change.audio === false) void stopAudio();
   };
 
+  /* Copy-code: the Tauri clipboard command is the reliable writer under
+     WebView2; navigator.clipboard is the browser-dev fallback. */
+  const copyText = useCallback(async (text: string) => {
+    try { await api.invoke("set_pc_clipboard", { text }); }
+    catch { try { await navigator.clipboard.writeText(text); } catch { /* no clipboard */ } }
+    toast(extra(prefsLangRef.current, "copied"), "ok");
+  }, [toast]);
+
+  /* Dismiss-sync: drop the card here AND tell the phone to cancel that
+     notification when the link is up. No `notif_dismiss` command exists in
+     the Rust Command enum yet, so the JSON rides the one generic passthrough
+     (send_signal → phone receives t="signal" carrying this payload).
+     ponytail: swap to a core Command::NotifDismiss + main.rs command when it
+     lands; the phone side matches on the payload kind either way. */
+  const dismissNote = useCallback((n: NoteItem) => {
+    setNotes((items) => items.filter((x) => x.id !== n.id));
+    if (!linkRef.current.connected || !n.notifId) return;
+    void api.invoke("send_signal", { payload: { kind: "notif_dismiss", app: n.app, notif_id: n.notifId } }).catch(() => {});
+  }, []);
+
   return (
     <div className={link.connected ? "app live" : "app"}>
       <Shell
@@ -484,11 +544,16 @@ export default function App() {
         startAudio={startAudio}
         stopAudio={stopAudio}
         screenFps={screenFps}
+        copyText={copyText}
+        dismissNote={dismissNote}
       />
       <div className="toasts" aria-live="polite">
         {toasts.map((t) => (
           <div key={t.id} className={`toast toast-${t.kind}`}>
             {t.kind === "ok" ? "✓" : t.kind === "err" ? "✕" : "●"} {t.msg}
+            {t.code && (
+              <button className="toast-copy" onClick={() => void copyText(t.code!)}>{extra(lang, "copyCode")}</button>
+            )}
           </div>
         ))}
       </div>
@@ -516,6 +581,10 @@ interface ShellProps {
   startAudio: () => Promise<void>;
   stopAudio: () => Promise<void>;
   screenFps: number;
+  /** Copy a verified OTP to the desktop clipboard. */
+  copyText: (text: string) => Promise<void>;
+  /** Clear a mirrored notification locally + on the phone (dismiss-sync). */
+  dismissNote: (n: NoteItem) => void;
 }
 
 function Shell(props: ShellProps) {
@@ -1479,14 +1548,32 @@ function NotificationsView(props: ShellProps) {
       )}
       <div className="card">
         {visible.length === 0 ? <p className="empty-inline">{T("no_notifications_yet")}</p> :
-          visible.map((n) => (
+          visible.map((n) => {
+            // Same regex as the incoming-notification toast: the card shows
+            // Copy code for anything the toast would have offered.
+            const otp = otpOf(`${n.title} ${n.body}`);
+            return (
             <div className="note-row" key={n.id}>
+              <button
+                className="note-dismiss"
+                onClick={() => props.dismissNote(n)}
+                title={extra(lang, "dismiss")}
+                aria-label={extra(lang, "dismiss")}
+              >✕</button>
               <div className="note-app">{n.app}</div>
               <p className="note-title">{n.title}</p>
               <p className="note-body">{n.body}</p>
-              {link.connected && <button className="ghost" onClick={() => setReplyTo(n)}>{T("reply")}</button>}
+              <div className="note-acts">
+                {otp && (
+                  <button className="btn sm ghost" onClick={() => void props.copyText(otp)}>
+                    {extra(lang, "copyCode")} <span className="otp-code">{otp}</span>
+                  </button>
+                )}
+                {link.connected && <button className="ghost" onClick={() => setReplyTo(n)}>{T("reply")}</button>}
+              </div>
             </div>
-          ))
+            );
+          })
         }
       </div>
       {replyTo && (
@@ -1536,6 +1623,9 @@ function SettingsView(props: ShellProps) {
     <div className="view">
       <PageHead title={T("settings_title")} sub={T("settings_sub")} />
       <FeatureControls lang={lang} prefs={props.prefs} updatePrefs={props.updatePrefs}/>
+      {/* NectarLink parity: every paired phone carries its own allow-list.
+          Persisted under lynko-caps-<device-id>; a future track consults it. */}
+      <DeviceCapsCard lang={lang} devices={props.devices} />
       <SetRow title={extra(lang,'animations')} desc={extra(lang,'motionHint')} on={props.prefs.animations} onToggle={()=>props.updatePrefs({animations:!props.prefs.animations})}/>
       <SetRow title={extra(lang,'hotkeys')} desc={extra(lang,'hotkeysHint')} on={props.prefs.hotkeys} onToggle={()=>props.updatePrefs({hotkeys:!props.prefs.hotkeys})}/>
       <div className="card">
@@ -1575,6 +1665,46 @@ function SetRow({ title, desc, on, onToggle }: { title: string; desc: string; on
     <div className="set-row">
       <div className="what"><strong>{title}</strong><span>{desc}</span></div>
       <button className={on ? "toggle on" : "toggle"} onClick={onToggle} role="switch" aria-checked={on} aria-label={title} />
+    </div>
+  );
+}
+
+/* Per-device feature switches (Settings › Devices card). Flat rows with the
+   stock hairline toggle — no rounded cards per row. Values live in
+   localStorage only; nothing on the link path reads them yet. */
+function DeviceCapsCard({ lang, devices }: { lang: Lang; devices: Device[] }) {
+  // localStorage is the store, so a toggle only needs a re-render — no copy
+  // of the caps tree to keep in sync (devices arrive async via discovery).
+  const [, force] = useState(0);
+  const paired = devices.filter((d) => d.paired);
+  const setCap = (id: string, key: CapKey, on: boolean) => {
+    try { localStorage.setItem(`lynko-caps-${id}`, JSON.stringify({ ...readCaps(id), [key]: on })); } catch { /* quota */ }
+    force((n) => n + 1);
+  };
+  return (
+    <div className="card">
+      <div className="set-row">
+        <div className="what"><strong>{extra(lang, "deviceCapsTitle")}</strong><span>{extra(lang, "deviceCapsHint")}</span></div>
+      </div>
+      {paired.length === 0 && <p className="empty-inline">{extra(lang, "deviceCapsEmpty")}</p>}
+      {paired.map((d) => {
+        const caps = readCaps(d.id);
+        return (
+          <div key={d.id} className="cap-device">
+            <div className="cap-device-name">{d.name}</div>
+            {CAP_KEYS.map((k) => (
+              <div className="set-row cap-row" key={k}>
+                <div className="what"><strong>{extra(lang, CAP_LABELS[k])}</strong></div>
+                <button
+                  className={caps[k] ? "toggle on" : "toggle"}
+                  onClick={() => setCap(d.id, k, !caps[k])}
+                  role="switch" aria-checked={caps[k]} aria-label={`${d.name}: ${extra(lang, CAP_LABELS[k])}`}
+                />
+              </div>
+            ))}
+          </div>
+        );
+      })}
     </div>
   );
 }
