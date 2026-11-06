@@ -150,7 +150,9 @@ export default function App() {
   appSetView.current = setView;
   const [lang, setLang] = useState<Lang>(() => {
     const saved = localStorage.getItem("lynko-lang");
-    return saved === "fa" || saved === "en" ? saved : (navigator.language || "").startsWith("fa") ? "fa" : "en";
+    if (saved === "fa" || saved === "zh" || saved === "en") return saved;
+    const nav = (navigator.language || "").toLowerCase();
+    return nav.startsWith("fa") ? "fa" : nav.startsWith("zh") ? "zh" : "en";
   });
   useEffect(() => {
     localStorage.setItem("lynko-lang", lang);
@@ -346,7 +348,7 @@ export default function App() {
     api.on<LinkState>("link_state", (e) => {
       setLink(e.payload);
       if (e.payload.connected) {
-        toast("Connected", "ok");
+        toast(tr(prefsLangRef.current, "toasts", "connected"), "ok");
       } else {
         setBattery(null);
         // Link dropped: the phone can't be muted-for-mirror anymore; make
@@ -367,11 +369,11 @@ export default function App() {
       } else if (ev.t === "clipboard") {
         if (!readPreferences().clipboard) return;
         setClipItems((c) => [{ id: ++toastUid, text: ev.d.text as string, source: "phone" as const, at: Date.now() }, ...c].slice(0, 30));
-        toast("Clipboard received from phone", "ok");
+        toast(tr(prefsLangRef.current, "toasts", "clip_from_phone"), "ok");
       } else if (ev.t === "clipboard_reply") {
         if (!readPreferences().clipboard) return;
         setClipItems((c) => [{ id: ++toastUid, text: ev.d.text as string, source: "phone" as const, at: Date.now() }, ...c].slice(0, 30));
-        toast("Clipboard pulled from phone", "ok");
+        toast(tr(prefsLangRef.current, "toasts", "clip_pull_phone"), "ok");
       } else if (ev.t === "phone_state") {
         const hadControl = linkRef.current.control;
         const wasMirror = linkRef.current.mirror;
@@ -388,17 +390,17 @@ export default function App() {
           control: typeof ev.d.control === "boolean" ? ev.d.control : undefined,
           usb: (ev.d.usb as boolean) ?? false,
         }));
-        if (ev.d.locked) toast("Phone locked — mirror survives locks; it returns on unlock", "info");
+        if (ev.d.locked) toast(tr(prefsLangRef.current, "toasts", "phone_locked"), "info");
         // Flipped to false while a desktop is live: gestures are being eaten.
         // Say it once per transition, with the exact cure (MIUI shows the
         // toggle as ON even when the service is dead).
         if (hadControl && ev.d.control === false) {
-          toast("Phone can't receive input — open Settings → Accessibility → Lynko, toggle OFF then ON", "err");
+          toast(tr(prefsLangRef.current, "toasts", "input_dead"), "err");
         }
       } else if (ev.t === "input_error") {
         const kind = ev.d.kind as string;
-        if (kind === "accessibility") toast("Taps & swipes need Accessibility: open Settings → Accessibility → Lynko → enable", "err");
-        else if (kind === "field") toast("No focused text field on the phone — tap one in the mirror first", "err");
+        if (kind === "accessibility") toast(tr(prefsLangRef.current, "toasts", "need_accessibility"), "err");
+        else if (kind === "field") toast(tr(prefsLangRef.current, "toasts", "no_focused_field"), "err");
       } else if (ev.t === "notification") {
         const safe = filterNotification({app:String(ev.d.app ?? ''), title:String(ev.d.title ?? ''), body:String(ev.d.text ?? ev.d.body ?? '')}, readPreferences());
         if (!safe) return;
@@ -749,9 +751,9 @@ function DevicesView({ devices, link, toast, lang }: ShellProps) {
                 <div key={d.id} className="devrow">
                   <span className={d.id.startsWith("usb:") ? "dev-dot usb" : "dev-dot on"} />
                   <div className="who"><strong>{d.name}</strong><span className="addr" title={d.address}>{d.id.startsWith("usb:") ? T("via_usb") : d.address}</span>
-                    {pairUnavailable === d.id && <span role="status" style={{color: "var(--amber, #ffb454)", maxWidth: 340}}>{lang === "fa" ? "لینکو را در گوشی باز کنید و شروع را بزنید، سپس دوباره تلاش کنید." : "Open Lynko on your phone and tap Start, then try again."}</span>}
+                    {pairUnavailable === d.id && <span role="status" style={{color: "var(--amber, #ffb454)", maxWidth: 340}}>{T("pair_hint_open")}</span>}
                   </div>
-                  <button className="btn sm primary" disabled={checkingPair !== null} onClick={() => pair(d)}>{checkingPair === d.id ? (lang === "fa" ? "در حال بررسی…" : "Checking…") : T("pair")}</button>
+                  <button className="btn sm primary" disabled={checkingPair !== null} onClick={() => pair(d)}>{checkingPair === d.id ? T("checking") : T("pair")}</button>
                 </div>
               ))}
             </div>

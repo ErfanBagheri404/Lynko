@@ -1,9 +1,10 @@
 import en from "./en.json";
 import fa from "./fa.json";
+import zh from "./zh.json";
 
-export type Lang = "en" | "fa";
+export type Lang = "en" | "fa" | "zh";
 
-const bundles: Record<Lang, typeof en> = { en, fa };
+const bundles: Record<Lang, typeof en> = { en, fa, zh };
 
 /**
  * Dot-path lookup, e.g. t("nav_devices").
@@ -20,6 +21,7 @@ export function t(lang: Lang, section: "desktop" | "settings" | "toasts" | "phon
 export const LANGS: { id: Lang; label: string; autonym: string }[] = [
   { id: "en", label: "English", autonym: "English" },
   { id: "fa", label: "Persian", autonym: "فارسی" },
+  { id: "zh", label: "Chinese", autonym: "简体中文" },
 ];
 
 export const isRTL = (lang: Lang) => lang === "fa";
