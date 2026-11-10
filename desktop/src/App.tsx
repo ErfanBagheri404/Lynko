@@ -152,7 +152,10 @@ export default function App() {
     const saved = localStorage.getItem("lynko-lang");
     if (saved === "fa" || saved === "zh" || saved === "en") return saved;
     const nav = (navigator.language || "").toLowerCase();
-    return nav.startsWith("fa") ? "fa" : nav.startsWith("zh") ? "zh" : "en";
+    // zh-TW/zh-HK/zh-MO/zh-Hant are Traditional; only Simplified is bundled,
+    // so those fall back to English rather than showing the wrong script.
+    const trad = /^zh-(tw|hk|mo|hant)/.test(nav);
+    return nav.startsWith("fa") ? "fa" : nav.startsWith("zh") && !trad ? "zh" : "en";
   });
   useEffect(() => {
     localStorage.setItem("lynko-lang", lang);

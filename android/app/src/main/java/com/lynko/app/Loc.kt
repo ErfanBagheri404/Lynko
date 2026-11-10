@@ -29,9 +29,13 @@ object Loc {
 
     /** Load from assets/locales/<lang>.json. Safe to call every onCreate. */
     fun init(ctx: Context) {
-        lang = when (ctx.resources.configuration.locales[0].language) {
-            "fa" -> "fa"
-            "zh" -> "zh"
+        val sys = ctx.resources.configuration.locales[0]
+        // zh-TW/zh-HK/zh-MO/zh-Hant are Traditional; only Simplified is bundled,
+        // so those fall back to English rather than showing the wrong script.
+        val trad = sys.script == "Hant" || sys.country in setOf("TW", "HK", "MO")
+        lang = when {
+            sys.language == "fa" -> "fa"
+            sys.language == "zh" && !trad -> "zh"
             else -> "en"
         }
         fun load(l: String): JSONObject? = try {

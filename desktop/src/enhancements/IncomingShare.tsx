@@ -81,6 +81,7 @@ export function IncomingShare({lang}:{lang:Lang}) {
 export function ShareHistory({lang}:{lang:Lang}) {
  const [hist,setHist]=useState<HistoryEntry[]|null>(null);
  const fa=lang==='fa';
+ const dl=fa?'fa-IR':lang==='zh'?'zh-CN':'en-US';
  const T=(k:EnhancementKey)=>text(lang,k);
  const open=async(path:string)=>{try{await invoke('reveal_path',{path});}catch(e){}};
  const loadHist=useCallback(()=>{void invoke<HistoryEntry[]>('history_list').then(setHist).catch(()=>setHist([]));},[]);
@@ -93,7 +94,7 @@ export function ShareHistory({lang}:{lang:Lang}) {
   {(!hist||hist.length===0)&&<p className="incoming-empty">{T('shareEmptyHistory')}</p>}
   {hist?.map((h,i)=>(<div className="incoming-history-row" key={i}>
    <span className="incoming-history-name" dir="auto">{h.name}</span>
-   <span className="incoming-history-meta">{fmt(h.size)} · {new Date(h.time*1000).toLocaleString(fa?'fa-IR':'en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span>
+   <span className="incoming-history-meta">{fmt(h.size)} · {new Date(h.time*1000).toLocaleString(dl,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span>
    <button className="btn sm" onClick={()=>void open(h.dir)}>{T('shareOpenFolder')}</button>
   </div>))}
  </div>;
