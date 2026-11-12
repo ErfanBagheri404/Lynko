@@ -207,7 +207,7 @@ jobs:
           for i in 1 2 3; do
             sudo apt-get install -y \
               libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
-              librsvg2-dev patchelf && break
+              librsvg2-dev patchelf squashfs-tools && break
             echo "apt-get install failed (attempt $i) — retrying in 15s"
             sleep 15
           done
@@ -237,6 +237,18 @@ jobs:
           " "$V"
           sed -i "s/^version = \".*\"/version = \"$V\"/" desktop/src-tauri/Cargo.toml
 
+      # tauri-bundler writes the downloaded AppRun launcher with mode 0770, and
+      # linuxdeploy renames that copy to AppRun.wrapped — so a root-mounted run
+      # (firejail, the AppImage catalog) gets "Permission denied". Seeding the
+      # tool cache with 0755 skips the download and keeps the mode correct.
+      # Tracked upstream: tauri-apps/tauri#16155
+      - name: Seed AppImage launcher mode
+        run: |
+          mkdir -p "$HOME/.cache/tauri"
+          curl -fsSL --retry 3 -o "$HOME/.cache/tauri/AppRun-x86_64" \
+            https://github.com/tauri-apps/binary-releases/releases/download/apprun-old/AppRun-x86_64
+          chmod 0755 "$HOME/.cache/tauri/AppRun-x86_64"
+
       - name: Build bundles
         uses: tauri-apps/tauri-action@v0
         env:
@@ -245,6 +257,28 @@ jobs:
           projectPath: desktop
           tauriScript: npx tauri
           args: --bundles deb,rpm,appimage
+
+      # Real modes, from the extracted files: --appimage-extract reports the modes
+      # its own runtime invents (directories 0700), so unpack the squashfs and stat
+      # instead. Symlinks are followed. Either way the launcher has to be
+      # world-readable and executable, or another user cannot start the image.
+      - name: Verify AppImage launcher mode
+        run: |
+          images=(desktop/src-tauri/target/release/bundle/appimage/*.AppImage)
+          [ ${#images[@]} -eq 1 ] || {
+            echo "::error::expected one AppImage, found ${#images[@]}: ${images[*]}"; exit 1; }
+          app=${images[0]}
+          dir=$(mktemp -d)
+          unsquashfs -no-progress -no-xattrs -d "$dir" -o "$("$app" --appimage-offset)" "$app" >/dev/null
+          checked=0
+          for f in AppRun AppRun.wrapped; do
+            { [ -e "$dir/$f" ] || [ -L "$dir/$f" ]; } || continue
+            mode=$(stat -Lc %a "$dir/$f")
+            (( (8#$mode & 5) == 5 )) || {
+              echo "::error::$f is $mode in the AppImage - must be world-readable and executable"; exit 1; }
+            checked=$((checked + 1))
+          done
+          [ "$checked" -gt 0 ] || { echo "::error::no AppRun launcher in the AppImage"; exit 1; }
 
       - uses: actions/upload-artifact@v4
         with:
