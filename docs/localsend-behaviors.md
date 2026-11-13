@@ -12,7 +12,7 @@ which are unsuitable for Lynko. This file is the spec of what was borrowed and w
 | 2 | **File-drop without a link = guided failure** — dropping files with no connected peer must not throw a raw hook error; it names the cause and opens pairing. | `App.tsx` `dropHandler`: if `!linkRef.current.connected && paths.length` → toast `sharePickRecipient` ("Pick a recipient first"), `setView("devices")`. |
 | 3 | **Live radar = reachable devices only** — LocalSend's discover tab lists only live peers; offline mDNS ghosts are not tappable. | `DevicesView`: `unpaired = devices.filter(d => !d.paired && d.online)`; offline entries are not rendered as pairable. |
 | 4 | **QR standard polarity** — QR renders dark modules on light background (inverted QRs only decode on inversion-tolerant scanners — most phone cameras are not). | `DevicesView` QR: `width 240`, `margin 4` (spec required quiet zone), `color: {dark: "#0a0b0d", light: "#ffffff"}`. |
-| 5 | **Share offer sheet (spec 4.1)** — sender identity + file list, accept/decline, progress while streaming, history of past transfers. | `IncomingShare.tsx`: `IncomingShare` (offer: sender + files + Accept/Close) and `ShareHistory` (past transfers with size/duration); `ShareProgress` inline progress; strings in `locales/en.json` / `fa.json` (keys added in commit `ebfb094`). |
+| 5 | **Share offer sheet (spec 4.1)** — sender identity + file list, accept/decline, progress while streaming, history of past transfers. | `IncomingShare.tsx`: `IncomingShare` (offer: sender + files + Accept/Close) and `ShareHistory` (past transfers with size/duration); `ShareProgress` inline progress; strings in `desktop/src/locales/en.json` / `fa.json` / `zh.json` (keys added in commit `ebfb094`). |
 | 6 | **Transfer progress stream** — byte-level progress during receive, cancelable. | `src-tauri/src/transfer_receive.rs`: streaming receive with progress events to the UI (`transfer-progress`), cancel command wired in `main.rs`. |
 | 7 | **History delete only when non-empty** — the "Delete history" action must be hidden when there is nothing to delete. | `FilesView`: delete-history button rendered only when history has entries (commit `8ee6884`); verified in the built app via CDP (`delete button present: False` when empty, `The history is empty.` placeholder). |
 | 8 | **Radar hint** — persistent one-liner under the radar telling the user what's needed to see peers (same network). | `.radar-hint` block in `DevicesView` + CSS `.radar-hint`. |
@@ -31,7 +31,7 @@ which are unsuitable for Lynko. This file is the spec of what was borrowed and w
 - `desktop/src/enhancements/styles.css` — history/empty/hint styles
 - `desktop/src/styles.css` — `.share-target*`, `.radar-hint`, ink fixes
 - `desktop/src/icons.tsx` — IconBell/IconBellOff/IconCamera/IconPin
-- `desktop/src/locales/en.json`, `fa.json` — shareTarget, shareTargetNone, shareSameWifi, shareTroubleshoot,
+- `desktop/src/locales/en.json`, `fa.json`, `zh.json` — shareTarget, shareTargetNone, shareSameWifi, shareTroubleshoot,
   sharePickRecipient, shareClose, shareAccept, shareHistory (+46 lines each)
 - `desktop/src-tauri/src/main.rs`, `transfer_receive.rs`, `Cargo.toml/.lock`, gen schemas — receive/progress/cancel commands
 - `core/src/lib.rs`, `sim/src/main.rs` — core + sim harness updates

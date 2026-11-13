@@ -214,7 +214,11 @@
     "favorites": "收藏",
     "favorites_hint": "最多可固定 8 个手机应用，一键启动。",
     "favorites_close": "关闭",
-    "favorites_empty": "尚未收到应用 — 手机还未发送应用列表。"
+    "favorites_empty": "尚未收到应用 — 手机还未发送应用列表。",
+    "online_count": "{n} 台在线",
+    "paired_count": "{n} 台已配对",
+    "phone_count": "台手机",
+    "qr_alt": "二维码"
   },
   "settings": {
     "language": "语言",

@@ -214,7 +214,11 @@
     "favorites": "Favorites",
     "favorites_hint": "Pin up to 8 phone apps to launch with one click.",
     "favorites_close": "Close",
-    "favorites_empty": "No apps received yet — the phone has not sent its app list."
+    "favorites_empty": "No apps received yet — the phone has not sent its app list.",
+    "online_count": "{n} online",
+    "paired_count": "{n} paired",
+    "phone_count": "phone(s)",
+    "qr_alt": "QR code"
   },
   "settings": {
     "language": "Language",

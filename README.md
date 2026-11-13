@@ -35,7 +35,7 @@ Open-source Samsung Flow / AirDroid alternative — mirror and control **any And
 | 🔔 | **Notification mirror** | See phone notifications on your desktop | ✅ |
 | 🔋 | **Battery & status** | Live battery level and charging state | ✅ |
 | 🌐 | **100% local** | No cloud servers. Your data never leaves your network | ✅ |
-| 🌍 | **Multi-language** | English, فارسی (more via JSON locales) | ✅ |
+| 🌍 | **Multi-language** | English, فارسی, 简体中文 (more via JSON locales) | ✅ |
 
 ## 📥 Download
 

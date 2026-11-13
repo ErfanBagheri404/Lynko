@@ -579,8 +579,8 @@ function Shell(props: ShellProps) {
             <IconBattery />{battery.pct}%
           </span>
         )}
-        <span className="sp">{devices.filter((d) => d.online).length} online</span>
-        <span className="sp">{devices.filter((d) => d.paired).length} paired</span>
+        <span className="sp">{T("online_count").replace("{n}", String(devices.filter((d) => d.online).length))}</span>
+        <span className="sp">{T("paired_count").replace("{n}", String(devices.filter((d) => d.paired).length))}</span>
         {link.connected && link.mirror && screenFps > 0 && (
           <span className="sp">{screenFps}fps</span>
         )}
@@ -713,7 +713,7 @@ function DevicesView({ devices, link, toast, lang }: ShellProps) {
             })}
           </div>
           <div className="radar-foot">
-            <span className="radar-count"><strong>{devices.filter((d) => d.online).length}</strong> phone(s)</span>
+            <span className="radar-count"><strong>{devices.filter((d) => d.online).length}</strong> {T("phone_count")}</span>
             <button className="btn sm ghost" onClick={scan}>{T("scan")}</button>
           </div>
           {devices.filter((d) => d.online).length === 0 && (
@@ -765,7 +765,7 @@ function DevicesView({ devices, link, toast, lang }: ShellProps) {
           <div className="card">
             <h2>{T("first_time")}</h2>
             <p className="desc">{T("qr_desc")}</p>
-            {qrDataUrl && <a href={RELEASE_URL} target="_blank" rel="noopener noreferrer" className="qr-link"><img className="qr-img" src={qrDataUrl} alt="QR code" /></a>}
+            {qrDataUrl && <a href={RELEASE_URL} target="_blank" rel="noopener noreferrer" className="qr-link"><img className="qr-img" src={qrDataUrl} alt={T("qr_alt")} /></a>}
             <span className="qr-url">{RELEASE_URL}</span>
           </div>
         </div>
