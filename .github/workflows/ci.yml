@@ -38,3 +38,5 @@ jobs:
       - name: TypeScript check
         working-directory: desktop
         run: npx tsc --noEmit
+      - name: Locale parity
+        run: node --test desktop/src/locales/parity.test.mjs

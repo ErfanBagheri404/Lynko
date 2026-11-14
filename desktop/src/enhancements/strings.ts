@@ -42,4 +42,25 @@ const fa: Record<keyof typeof en,string> = {
  shareSameWifi:'مطمئن شوید گوشی روی همان شبکه وای‌فای است.', shareTroubleshoot:'عیب‌یابی',
 };
 export type EnhancementKey = keyof typeof en;
-export const text = (lang:Lang, key:EnhancementKey) => (lang === 'fa' ? fa : en)[key];
+const zh: Record<EnhancementKey,string> = {
+ health:'连接状态', unknown:'未上报', disconnected:'已断开', unavailable:'手机不支持', idle:'采集已停止', waiting:'未收到画面', stalled:'超过 5 秒未收到画面', live:'正在接收画面', locked:'手机屏幕关闭或已锁定',
+ lastFrame:'最后收到画面', never:'本次会话无', control:'手机输入服务', ready:'就绪', needsControl:'请在手机无障碍设置中启用 Lynko', refresh:'刷新手机状态', healthHint:'画面时间来自收到的 LV1 图像，不是连接心跳。屏幕静止或锁定时可能停止更新，但连接仍在。',
+ trust:'桌面功能控制', trustHint:'这些偏好仅作用于本桌面界面，不是手机权限或安全隔离。配对只是记住设备；HTTP 与 WebSocket 流量未加密。请使用可信网络。',
+ screen:'投屏请求与显示', input:'远程键盘与指针', clipboard:'剪贴板访问', files:'文件发送', notifications:'通知显示与回复', audio:'手机音频播放',
+ privacy:'通知隐私', hidePreview:'隐藏标题和内容', privacyHint:'过滤在写入本地历史和 Windows 通知之前进行。更改也会删除现有本地预览；隐藏的内容无法恢复。手机仍可能传输该内容。', blockedApps:'屏蔽的应用标识', block:'屏蔽应用', unblock:'取消屏蔽', appPlaceholder:'精确的应用标识', hidden:'预览已隐藏', clear:'清除本地历史',
+ queued:'排队中', sending:'正在发送 / 等待手机', sent:'已发送', failed:'失败', cancelled:'已取消', retry:'重试', cancel:'取消排队', queueHint:'一次一个文件。重试会再次请求手机。正在上传的文件无法在此取消；排队中的可以。进度按已读字节计算，不代表手机已确认。', queuePaused:'队列需要原手机和文件发送都已启用。',
+ fit:'适应', fill:'填充（裁剪）', top:'窗口置顶',
+ animations:'界面动画', motionHint:'可选的界面效果；系统的减少动态效果始终优先。', forgetConfirm:'忘记这台已配对手机？当前连接将被断开。', confirm:'忘记手机', cancelAction:'保留手机', disabled:'已被桌面功能控制禁用', error:'操作失败', seconds:'秒前',
+ hotkeys:'全局快捷键', hotkeysHint:'即使 Lynko 在后台也有效。Ctrl+Shift+L 显示或隐藏窗口，Ctrl+Shift+M 切换投屏。两者当前空闲 — 如与其他应用冲突可另选。', hotkeyConflict:'Lynko 无法占用该快捷键，已被其他应用占用。快捷键会保持关闭直到它可用。',
+ updates:'检查更新', updatesDesc:'来自 GitHub releases 的新版本', version:'版本', checkNow:'立即检查', checking:'正在检查…', uptodate:'已是最新版本', updateAvailable:'有可用更新', checkFailed:'检查失败', checkOffline:'请检查网络连接', autoCheck:'启动时自动检查', whatsnew:'更新内容', updated:'Lynko 已更新', download:'下载', later:'稍后', published:'发布',
+ quality:'投屏质量', qualityDesc:'实时生效，无需重启采集。网络繁忙时手机仍会自动降档。', q_eco:'省流', q_balanced:'均衡', q_sharp:'清晰', q_native:'原始',
+ shareOfferTitle:'{alias} 想向你发送 {n} 个文件', shareSaveHint:'文件保存到「下载」文件夹。已存在的文件不会被覆盖。',
+ shareDecline:'拒绝', shareAccept:'接受', shareClose:'关闭',
+ shareReceiving:'正在接收文件', shareFiles:'文件：{curr} / {total}', shareSize:'大小：{curr} / {total}', shareSpeed:'速度：{speed}/s',
+ shareWaiting:'等待响应…', shareFinished:'已完成', shareFinishedError:'完成但有错误', shareCanceled:'发送方已取消',
+ shareQ:'队列', shareSkip:'已跳过', shareErr:'错误', shareDone:'完成', shareSending:'发送中',
+ shareHistory:'历史', shareOpenFolder:'打开文件夹', shareDeleteHistory:'删除历史', shareEmptyHistory:'历史为空。', sharePickRecipient:'选择接收文件的手机', shareSendingTo:'发送给：{name}',
+ shareTarget:'发送到', shareTargetNone:'未连接手机', shareConnected:'已连接',
+ shareSameWifi:'请确保手机连接同一 Wi-Fi 网络。', shareTroubleshoot:'故障排查',
+};
+export const text = (lang:Lang, key:EnhancementKey) => (lang === 'fa' ? fa : lang === 'zh' ? zh : en)[key];

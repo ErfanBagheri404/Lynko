@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+<string name="audio_permission">允许播放音频</string>
+<string name="audio_permission_hint">Android 需要录音权限才能捕获应用播放的声音。Lynko 使用的是应用内音频捕获，而不是麦克风。部分应用会阻止捕获。</string>
+<string name="audio_permission_granted">已获得音频权限。请在桌面上点击“音频”。</string>
+<string name="audio_permission_denied">音频权限被拒绝。你可以在 Android 应用权限中开启。</string>
+</resources>

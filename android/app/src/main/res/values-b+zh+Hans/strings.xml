@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Simplified Chinese. Script-qualified (values-b+zh+Hans) so Traditional
+     locales (zh-TW/zh-HK/zh-MO/zh-Hant) keep the default English res strings,
+     matching Loc.kt, which only bundles Simplified. -->
+<resources>
+    <string name="app_name">Lynko</string>
+    <string name="app_tagline">你的手机，投在桌面上</string>
+    <string name="accessibility_service_description">Lynko 使用此无障碍服务接收已配对桌面发来的点击与滑动指令。</string>
+    <string name="nav_home">主页</string>
+    <string name="nav_screen">共享屏幕</string>
+    <string name="interface_animations">界面动画</string>
+    <string name="motion_on">界面动画已开启</string>
+    <string name="motion_off">界面动画已关闭</string>
+
+    <!-- Home-tab section lanes -->
+    <string name="section_signal">信号</string>
+    <string name="requires">所需权限</string>
+    <string name="section_start">启动</string>
+    <string name="start">启动 Lynko</string>
+    <string name="not_running">未运行</string>
+
+    <!-- Screen tab -->
+    <string name="section_screen">屏幕</string>
+    <string name="screen_state_idle">空闲</string>
+    <string name="screen_start">开始投屏</string>
+    <string name="fps_zero">0 帧</string>
+</resources>

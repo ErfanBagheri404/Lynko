@@ -148,6 +148,8 @@
     "no_signal": "No signal",
     "no_signal_sub": "Connect a phone to start mirroring",
     "pair_connect": "Pair and connect",
+    "pair_hint_open": "Open Lynko on your phone and tap Start, then try again.",
+    "checking": "Checking…",
     "paste_clip": "Paste clipboard",
     "phone_idle": "Ready",
     "phone_locked": "Phone locked",
@@ -212,7 +214,11 @@
     "favorites": "Favorites",
     "favorites_hint": "Pin up to 8 phone apps to launch with one click.",
     "favorites_close": "Close",
-    "favorites_empty": "No apps received yet — the phone has not sent its app list."
+    "favorites_empty": "No apps received yet — the phone has not sent its app list.",
+    "online_count": "{n} online",
+    "paired_count": "{n} paired",
+    "phone_count": "phone(s)",
+    "qr_alt": "QR code"
   },
   "settings": {
     "language": "Language",
@@ -234,6 +240,13 @@
     "connecting": "Connecting to {name}…",
     "connect_failed": "Connect failed: {e}",
     "disconnected": "Disconnected",
-    "forgot": "Forgot {name}"
+    "forgot": "Forgot {name}",
+    "connected": "Connected",
+    "clip_from_phone": "Clipboard received from phone",
+    "clip_pull_phone": "Clipboard pulled from phone",
+    "phone_locked": "Phone locked — mirroring continues, resumes after unlock",
+    "input_dead": "Phone is not accepting input — open Settings → Accessibility → Lynko, turn it off and on",
+    "need_accessibility": "Tap and swipe need Accessibility: open Settings → Accessibility → Lynko → enable",
+    "no_focused_field": "No focused text field on the phone — tap one in the mirror first"
   }
 }
