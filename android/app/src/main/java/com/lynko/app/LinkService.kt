@@ -920,6 +920,22 @@ class LinkService : Service() {
                     sendEvent(conn, "input_error", JSONObject().put("kind", "reply").put("hint", err))
                 }
             }
+            // Desktop card dismissal (core Command serializes t="signal",
+            // d={kind,...}): cancel the matching Android notification.
+            "signal" -> {
+                val o = d as? JSONObject
+                if (o?.optString("kind") == "notif_dismiss") {
+                    val app = o.optString("app")
+                    // Desktop sends serde snake_case; older builds camelCase.
+                    val id = if (o.has("notif_id")) o.optInt("notif_id", -1) else o.optInt("notifId", -1)
+                    // false = no listener connected / unknown notification.
+                    // The desktop already dropped its card — nothing to bounce
+                    // back, so stay quiet instead of erroring.
+                    if (LinkNotifier.cancel(app, id)) {
+                        sendEvent(conn, "log", JSONObject().put("msg", "notification dismissed"))
+                    }
+                }
+            }
             "start_audio" -> startAudioCapture(conn)
             "stop_audio" -> {
                 audioSession.getAndSet(null)?.stop()

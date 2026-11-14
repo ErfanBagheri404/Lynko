@@ -135,7 +135,11 @@
     "share_diag_link": "اتصال:",
     "share_diag_service": "سرویس:",
     "share_diag_usb": "USB:",
-    "favorite": "مورد علاقه"
+    "favorite": "مورد علاقه",
+    "err_queue_offline": "هیچ دسکتاپی متصل نیست — تا برقراری ارتباط در صف ماند.",
+    "err_queue_link_lost": "اتصال قطع شد — تا برقراری ارتباط در صف ماند.",
+    "err_queue_changed": "فایل پس از قرارگیری در صف تغییر کرده است.",
+    "err_queue_missing": "فایل در صف دیگر در دسترس نیست."
   },
   "desktop": {
     "nav_devices": "دستگاه‌ها",
