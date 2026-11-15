@@ -288,7 +288,10 @@ jobs:
           [ ${#images[@]} -eq 1 ] || {
             echo "::error::expected one AppImage, found ${#images[@]}: ${images[*]}"; exit 1; }
           app=${images[0]}
-          dir=$(mktemp -d)
+          # squashfs-tools 4.5 (jammy) refuses an existing -d directory,
+          # so extract into a fresh path under the temp dir.
+          root=$(mktemp -d)
+          dir="$root/appimage"
           unsquashfs -no-progress -no-xattrs -d "$dir" -o "$("$app" --appimage-offset)" "$app" >/dev/null
           checked=0
           for f in AppRun AppRun.wrapped; do
