@@ -58,23 +58,16 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusSub: TextView
     private lateinit var startBtn: Button
     private lateinit var pinText: TextView
-    private lateinit var permScreen: LinearLayout
-    private lateinit var permScreenIcon: TextView
-    private lateinit var permScreenText: TextView
-    private lateinit var permA11y: LinearLayout
-    private lateinit var permA11yIcon: TextView
-    private lateinit var permA11yText: TextView
-    private lateinit var permBattery: LinearLayout
-    private lateinit var permBatteryIcon: TextView
-    private lateinit var permBatteryText: TextView
-    private lateinit var permNotif: LinearLayout
-    private lateinit var permNotifIcon: TextView
-    private lateinit var permNotifText: TextView
+    private lateinit var permPrepare: LinearLayout
 
     private var sharedUris: List<android.net.Uri>? = null
     private var pendingMirror = false
     private var currentTab = 0  // 0=home, 1=screen
     private var feedback: com.google.android.material.snackbar.Snackbar? = null
+
+    // --- first-run prep screen ("Four things, once.") ---
+    private var prepView: PrepView? = null
+    private var prepActive = false
 
     private fun showFeedback(message: String) {
         feedback?.dismiss()
@@ -100,18 +93,8 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
         Loc.init(this)
 
-        // Request battery optimization exemption on first launch — without
-        // this, MIUI kills the foreground service when VPN toggles.
-        if (Build.VERSION.SDK_INT >= 23) {
-            val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
-            if (!pm.isIgnoringBatteryOptimizations(packageName)) {
-                try {
-                    startActivity(android.content.Intent(
-                        android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                        android.net.Uri.parse("package:$packageName")))
-                } catch (_: Exception) { }
-            }
-        }
+        // Battery-optimization exemption is not requested here: the prep screen
+        // owns that gate (one row, one dialog). Asking twice = two prompts.
 
         settingsContainer = findViewById(R.id.settingsContainer)
         navSettings = findViewById(R.id.navSettings)
@@ -133,19 +116,6 @@ class MainActivity : AppCompatActivity() {
         startBtn = findViewById(R.id.startBtn)
         pinText = findViewById(R.id.pinText)
         DevPermHeal.heal(this)
-
-        permScreen = findViewById(R.id.permScreen)
-        permScreenIcon = findViewById(R.id.permScreenIcon)
-        permScreenText = findViewById(R.id.permScreenText)
-        permA11y = findViewById(R.id.permA11y)
-        permA11yIcon = findViewById(R.id.permA11yIcon)
-        permA11yText = findViewById(R.id.permA11yText)
-        permBattery = findViewById(R.id.permBattery)
-        permBatteryIcon = findViewById(R.id.permBatteryIcon)
-        permBatteryText = findViewById(R.id.permBatteryText)
-        permNotif = findViewById(R.id.permNotif)
-        permNotifIcon = findViewById(R.id.permNotifIcon)
-        permNotifText = findViewById(R.id.permNotifText)
 
         // Share tab lives in the same container the old Screen tab used.
         screenTab = ShareTabView(this)
@@ -196,13 +166,14 @@ class MainActivity : AppCompatActivity() {
             }
         }
         renderState()
-        renderPerms()
-        findViewById<Button>(R.id.audioPermission).setOnClickListener {
+        findViewById<TextView>(R.id.settingsVersion).text =
+            "LYNKO  " + (packageManager.getPackageInfo(packageName, 0).versionName ?: "")
+        findViewById<View>(R.id.audioPermission).setOnClickListener {
             if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
                 showFeedback(getString(R.string.audio_permission_granted))
             } else ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), 102)
         }
-        findViewById<Button>(R.id.privacyPolicy).setOnClickListener {
+        findViewById<View>(R.id.privacyPolicy).setOnClickListener {
             // setMessage() does not scroll: the long policy got silently cut
             // off mid-sentence, and Myket requires the privacy text to be
             // readable in-app. Use a scrollable body instead.
@@ -248,17 +219,45 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Each checklist row is a shortcut to the exact system screen needed.
-        permScreen.setOnClickListener { v ->
-            Haptics.tap(v)
-            if (!ScreenPermission.isGranted) ScreenPermission.request(this)
+        permPrepare = findViewById(R.id.permPrepare)
+        permPrepare.setOnClickListener { v -> Haptics.tap(v); showPrep(fromSettings = true) }
+
+        // First run: the prep screen replaces the tabs until "Continue".
+        if (!getPreferences(Context.MODE_PRIVATE).getBoolean("lynko_prep_done", false)) {
+            showPrep(fromSettings = false)
         }
-        permA11y.setOnClickListener { v -> Haptics.tap(v); openAccessibilitySettings() }
-        permBattery.setOnClickListener { v -> Haptics.tap(v); openBatterySettings() }
-        permNotif.setOnClickListener { v ->
-            Haptics.tap(v)
-            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+    }
+
+    /** Overlay the "Four things, once." screen on appRoot (covers the nav). */
+    private fun showPrep(fromSettings: Boolean) {
+        if (prepActive) return
+        prepActive = true
+        val v = PrepView(this, !fromSettings)
+        prepView = v
+        v.onContinue = {
+            getPreferences(Context.MODE_PRIVATE).edit().putBoolean("lynko_prep_done", true).apply()
+            dismissPrep(if (fromSettings) 2 else currentTab)
         }
+        v.onBack = { dismissPrep(2) }
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(v) { view, insets ->
+            val bars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            insets
+        }
+        findViewById<android.view.ViewGroup>(android.R.id.content).addView(
+            v, android.view.ViewGroup.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+            ),
+        )
+    }
+
+    private fun dismissPrep(tab: Int) {
+        prepActive = false
+        prepView?.let { findViewById<android.view.ViewGroup>(android.R.id.content).removeView(it) }
+        prepView = null
+        switchTab(tab, false)
+        renderState()
     }
 
     private fun switchTab(tab: Int, animate: Boolean = true) {
@@ -313,7 +312,6 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         ShareSender.onChange = { screenTab.render() }
-        LynkoAccessibilityService.onChange = { renderPerms() }
         screenTab.render()
         readShareIntent()
         if (intent.getBooleanExtra("request_mirror_consent", false)) {
@@ -321,6 +319,7 @@ class MainActivity : AppCompatActivity() {
             pendingMirror = true
             ScreenPermission.request(this)
         }
+        prepView?.onScreenResume()
         switchTab(currentTab, false)
         renderState()
         screenTab.render()
@@ -420,49 +419,8 @@ class MainActivity : AppCompatActivity() {
                 pinText.visibility = View.GONE
             }
         }
-        renderPerms()
     }
 
-    /** Checklist rows flip from • (todo) to ✓ (granted) as the user grants them. */
-    private fun renderPerms() {
-        // Check the PERMISSION (Settings string), not the live binding: MIUI
-        // unbinds the service on backgrounding, so instance==null on every
-        // relaunch while the grant is still intact — checking instance told
-        // every user to toggle the service off→on on each app open. The
-        // checklist re-renders via LynkoAccessibilityService.onChange when the
-        // system actually (re)binds.
-        val a11yOk = LynkoAccessibilityService.enabled(this)
-        val notifOk = if (Build.VERSION.SDK_INT >= 24) {
-            androidx.core.app.NotificationManagerCompat.getEnabledListenerPackages(this)
-                .contains(packageName)
-        } else true
-
-        fun bind(row: LinearLayout, icon: TextView, text: TextView, ok: Boolean, label: String) {
-            // Jackfield world: lanes never change their plate. State is drawn
-            // on the lane's own mark — • pending (amber), ╬ granted (muted,
-            // struck). No background swap, no rounding.
-            row.setBackgroundResource(0)
-            // Granted rows keep FULL alpha: 0.55 over #8B8D90 composites to
-            // ~2.6:1 and the strike-through line was the only thing reading as
-            // "done". Contrast must stay AA (5.9:1); state is carried by the
-            // mark (•/✓) and the strike, not by fading the text out.
-            row.alpha = 1f
-            icon.text = if (ok) "✓" else "•"
-            icon.setTextColor(if (ok) 0xFF8B8D90.toInt() else 0xFFFFB454.toInt())
-            text.paint.isStrikeThruText = ok
-            text.setTextColor(if (ok) 0xFF8B8D90.toInt() else 0xFFE8E6E1.toInt())
-            text.text = label
-        }
-        bind(permScreen, permScreenIcon, permScreenText, ScreenPermission.isGranted, Loc.t("phone", "perm_screen"))
-        bind(permA11y, permA11yIcon, permA11yText, a11yOk, Loc.t("phone", "perm_a11y"))
-        // MIUI kills the process at lock-screen unless battery optimizations
-        // are ignored — and that kill is what resets the a11y grant.
-        val battOk = if (Build.VERSION.SDK_INT >= 23)
-            (getSystemService(Context.POWER_SERVICE) as android.os.PowerManager)
-                .isIgnoringBatteryOptimizations(packageName) else true
-        bind(permBattery, permBatteryIcon, permBatteryText, battOk, Loc.t("phone", "perm_battery"))
-        bind(permNotif, permNotifIcon, permNotifText, notifOk, Loc.t("phone", "perm_notif"))
-    }
 
     /** Deep-link to MIUI's battery saver screen for this app. */
     private fun openBatterySettings() {

@@ -1,26 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Themed-icon variant: identical geometry to ic_launcher_foreground.xml,
-     single fill colour - the system tints it. -->
+<!-- Lynko launcher foreground: stair mark, single fill - the system tints it.
+     Source path is a 256x256 pixel-stair grid, scaled to 50% of the 108dp
+     adaptive canvas (inside the 66dp safe zone) so no mask clips it. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:fillType="evenOdd"
-        android:pathData="M33,28 H75 A7,7 0 0 1 82,35 V59 A7,7 0 0 1 75,66 H33 A7,7 0 0 1 26,59 V35 A7,7 0 0 1 33,28 Z
-                          M33,32.5 H75 A3,3 0 0 1 78,35.5 V59.5 A3,3 0 0 1 75,62.5 H33 A3,3 0 0 1 30,59.5 V35.5 A3,3 0 0 1 33,32.5 Z" />
-
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M51,34.5 H57 A3.5,3.5 0 0 1 60.5,38 V57 A3.5,3.5 0 0 1 57,60.5 H51 A3.5,3.5 0 0 1 47.5,57 V38 A3.5,3.5 0 0 1 51,34.5 Z" />
-
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M51.75,65.5 H56.25 V75 H51.75 Z" />
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M42,75 H66 A2,2 0 0 1 68,77 A2,2 0 0 1 66,79 H42 A2,2 0 0 1 40,77 A2,2 0 0 1 42,75 Z" />
+    <group
+        android:scaleX="0.210937"
+        android:scaleY="0.210937"
+        android:translateX="27"
+        android:translateY="27">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M160,256 L96,256 L96,160 L0,160 L0,96 L160,96 Z M256,256 L192,256 L192,64 L0,64 L0,0 L256,0 Z M64,256 L0,256 L0,192 L64,192 Z" />
+    </group>
 </vector>

@@ -20,4 +20,26 @@
     <string name="screen_state_idle">آماده</string>
     <string name="screen_start">شروع آینه‌سازی</string>
     <string name="fps_zero">۰ فریم</string>
+
+    <!-- First-run prep screen -->
+    <string name="prep_title">چهار چیز، یک بار.</string>
+    <string name="prep_lede">کامپیوترت این‌ها را در هر حال می‌خواهد. همین حالا تنظیمشان کن تا همه‌چیز روان کار کند.</string>
+    <string name="prep_taps">اجازه فشردن به کامپیوتر</string>
+    <string name="prep_taps_sub">لمس، سوایپ و تایپ، فقط هنگام اتصال.</string>
+    <string name="prep_mirror">آینه‌سازی این صفحه</string>
+    <string name="prep_mirror_sub">هر نشست، اشتراک را تأیید می‌دهی.</string>
+    <string name="prep_mirror_chip">هر بار</string>
+    <string name="prep_awake">تا وقتی متصلی، روشن بمان</string>
+    <string name="prep_awake_sub">جلوی خاموش‌شدن صفحه و قطع اتصال را می‌گیرد.</string>
+    <string name="prep_notif">اعلان‌ها</string>
+    <string name="prep_notif_sub">پیام‌های کامپیوترت به‌صورت اعلان واقعی.</string>
+    <string name="prep_waiting">در انتظار اندروید…</string>
+    <string name="prep_turn_on">روشن کردن %1$d مورد</string>
+    <string name="prep_turn_on_1">روشن کردن یک مورد</string>
+    <string name="prep_continue">ادامه</string>
+    <string name="prep_note">از ۳، %1$d روشن · بقیه را بعداً هم می‌شود</string>
+    <string name="prep_entry">آماده‌سازی این گوشی</string>
+    <string name="prep_back">بازگشت</string>
+    <string name="prep_state_on">روشن</string>
+    <string name="prep_state_off">خاموش</string>
 </resources>

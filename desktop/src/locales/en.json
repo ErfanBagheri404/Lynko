@@ -76,6 +76,8 @@
     "scan": "Rescan",
     "no_devices": "No phones found. Start Lynko on your phone and rescan.",
     "pair": "Pair",
+    "pair_hint_open": "Open Lynko on your phone and tap Start, then try again.",
+    "checking": "Checking…",
     "connect": "Connect",
     "disconnect": "Disconnect",
     "connected": "Connected",
@@ -218,7 +220,22 @@
     "online_count": "{n} online",
     "paired_count": "{n} paired",
     "phone_count": "phone(s)",
-    "qr_alt": "QR code"
+    "qr_alt": "QR code",
+    "ob_title": "Two devices, one room.",
+    "ob_lede": "Lynko links this computer and your phone over your own Wi-Fi. No account, no cable — nothing leaves your network.",
+    "ob_section": "Three things to turn on",
+    "ob_count": "{n} of 3 on",
+    "ob_firewall": "Windows Firewall",
+    "ob_firewall_desc": "Lets your phone reach this computer on the local network.",
+    "ob_autostart": "Start with Windows",
+    "ob_autostart_desc": "The link is ready before you sit down.",
+    "ob_preview": "Hide message content in the tray",
+    "ob_preview_desc": "Sender stays visible; the content stays on the phone.",
+    "ob_cta_one": "Turn on the last one",
+    "ob_cta_all": "Continue",
+    "ob_cta_n": "Turn on {n}",
+    "ob_notnow": "Not now",
+    "ob_local_only": "Local network only"
   },
   "settings": {
     "language": "Language",
@@ -230,7 +247,16 @@
     "desktop_notifs_desc": "Show phone notifications as Windows toasts.",
     "about": "About",
     "inspired_by": "Design inspired by LocalSend (localsend.org), Apache-2.0.",
-    "version": "Version"
+    "version": "Version",
+    "onboarding": "First-run setup",
+    "onboarding_desc": "Firewall, autostart and notification previews.",
+    "onboarding_go": "Run it again",
+    "sec_about": "About",
+    "sec_appearance": "Appearance",
+    "sec_connection": "Connection",
+    "sec_features": "Features",
+    "sec_notifications": "Notifications",
+    "sec_updates": "Updates"
   },
   "toasts": {
     "found_devices": "Found {n} device(s)",
@@ -247,6 +273,7 @@
     "phone_locked": "Phone locked — mirroring continues, resumes after unlock",
     "input_dead": "Phone is not accepting input — open Settings → Accessibility → Lynko, turn it off and on",
     "need_accessibility": "Tap and swipe need Accessibility: open Settings → Accessibility → Lynko → enable",
-    "no_focused_field": "No focused text field on the phone — tap one in the mirror first"
+    "no_focused_field": "No focused text field on the phone — tap one in the mirror first",
+    "ob_failed": "Could not change that setting"
   }
 }

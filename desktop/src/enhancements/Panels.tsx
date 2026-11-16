@@ -13,9 +13,12 @@ export function HealthPanel({lang,link,lastFrame,now,capable,refresh}:{lang:Lang
   </section>;
 }
 export function FeatureControls({lang,prefs,updatePrefs}:{lang:Lang;prefs:Preferences;updatePrefs:(patch:Partial<Preferences>)=>void}) {
-  return <section className="card enhancement-panel"><h2>{text(lang,'trust')}</h2><p className="desc">{text(lang,'trustHint')}</p><div className="feature-grid">
-    {(['screen','input','clipboard','files','notifications','audio'] as const).map(key=><label key={key}><input type="checkbox" checked={prefs[key]} onChange={e=>updatePrefs({[key]:e.target.checked})}/>{text(lang,key)}</label>)}
-  </div></section>;
+  return <section className="card">
+    {(['screen','input','clipboard','files','notifications','audio'] as const).map(key=><div className="set-row" key={key}>
+      <div className="what"><strong>{text(lang,key)}</strong></div>
+      <div className="ctl"><button className={prefs[key]?'toggle on':'toggle'} role="switch" aria-checked={prefs[key]} aria-label={text(lang,key)} onClick={()=>updatePrefs({[key]:!prefs[key]})}/></div>
+    </div>)}
+  </section>;
 }
 export function PrivacyControls({lang,prefs,updatePrefs,clear}:{lang:Lang;prefs:Preferences;updatePrefs:(patch:Partial<Preferences>)=>void;clear:()=>void}) {
   const [app,setApp]=useState('');

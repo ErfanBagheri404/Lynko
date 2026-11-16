@@ -1,12 +1,13 @@
 // Lynko icons — one consistent stroke, drawn for this app.
 // 20x20 grid, stroke 1.6, round joins.
 
+// Same stair mark as the launcher/app icon, so the product reads as one thing.
 export const Mark = () => (
   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-    <rect x="2.5" y="2.5" width="19" height="19" rx="6" fill="#20242A" stroke="rgba(255,255,255,0.12)" />
-    <circle cx="8.4" cy="12" r="2.6" fill="#ffb454" />
-    <circle cx="15.6" cy="12" r="2.6" fill="#f2f1ec" />
-    <rect x="10.6" y="11.2" width="2.8" height="1.6" rx="0.8" fill="#ffb454" />
+    <rect x="0.5" y="0.5" width="23" height="23" rx="6.5" fill="#0A0B0D" stroke="rgba(255,255,255,0.12)" />
+    <g transform="translate(5.04 5.04) scale(0.054375)" fill="#ffb454">
+      <path d="M160,256 L96,256 L96,160 L0,160 L0,96 L160,96 Z M256,256 L192,256 L192,64 L0,64 L0,0 L256,0 Z M64,256 L0,256 L0,192 L64,192 Z" />
+    </g>
   </svg>
 );
 

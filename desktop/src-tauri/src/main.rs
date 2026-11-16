@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod adb;
+mod preflight;
 mod share_receive;
 mod transfer_receive;
 
@@ -573,7 +574,14 @@ async fn run_link(
                     }
                 }
             }
-            Ok(Some(Ok(Message::Close(_)))) | Ok(None) | Err(_) => break,
+            // Idle for 30s is NOT death: with screen streaming off (or the user
+            // just not typing) the phone sends nothing, and tearing the link
+            // down here made desktop reconnect every 30s forever. Ping instead —
+            // a dead TCP shows up as a failed send, a live one answers pong.
+            Err(_) => {
+                let _ = _tx.send(Message::Ping(Vec::new().into())).await;
+            }
+            Ok(Some(Ok(Message::Close(_)))) | Ok(None) => break,
             _ => {}
         }
     }
@@ -1143,26 +1151,24 @@ async fn check_update() -> Result<UpdateInfo, String> {
         .build()
         .map_err(|e| e.to_string())?;
 
-    // Try /releases/latest first; if 404, fallback to /releases
-    let url_latest = "https://api.github.com/repos/ErfanBagheri404/Lynko/releases/latest";
-    let resp = client.get(url_latest).send().await;
-    let json_val: serde_json::Value = match resp {
-        Ok(r) if r.status().is_success() => r.json().await.map_err(|e| e.to_string())?,
-        _ => {
-            // fallback: first entry of /releases
-            let url_all = "https://api.github.com/repos/ErfanBagheri404/Lynko/releases?per_page=1";
-            let r2 = client
-                .get(url_all)
-                .send()
-                .await
-                .map_err(|e| format!("Network error: {e}"))?;
-            if !r2.status().is_success() {
-                return Err(format!("GitHub API returned {}", r2.status()));
-            }
-            let arr: Vec<serde_json::Value> = r2.json().await.map_err(|e| e.to_string())?;
-            arr.into_iter().next().ok_or_else(|| "No releases found".to_string())?
-        }
-    };
+    // One deterministic source: the newest published semver release. `/latest`
+    // and the list endpoint disagree (rate limits, the `continuous` tag), which
+    // made the modal flip between a detailed body and a bare changelog link.
+    let url = "https://api.github.com/repos/ErfanBagheri404/Lynko/releases?per_page=30";
+    let resp = client.get(url).send().await.map_err(|e| format!("Network error: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("GitHub API returned {}", resp.status()));
+    }
+    let list: Vec<serde_json::Value> = resp.json().await.map_err(|e| e.to_string())?;
+    let json_val = list
+        .into_iter()
+        .filter(|r| {
+            r.get("draft").and_then(|v| v.as_bool()) != Some(true)
+                && r.get("prerelease").and_then(|v| v.as_bool()) != Some(true)
+                && parse_semver(tag_of(r)).is_some()
+        })
+        .max_by_key(|r| parse_semver(tag_of(r)))
+        .ok_or_else(|| "No releases found".to_string())?;
 
     let tag = json_val
         .get("tag_name")
@@ -1208,6 +1214,10 @@ async fn check_update() -> Result<UpdateInfo, String> {
     };
     *lock = Some((std::time::Instant::now(), info.clone()));
     Ok(info)
+}
+
+fn tag_of(r: &serde_json::Value) -> &str {
+    r.get("tag_name").and_then(|v| v.as_str()).unwrap_or("").trim_start_matches('v')
 }
 
 fn parse_semver(s: &str) -> Option<(u32, u32, u32)> {
@@ -1651,7 +1661,10 @@ fn main() {
             set_dnd,
             request_app_list,
             launch_app,
-            capture_screenshot
+            capture_screenshot,
+            preflight::preflight_state,
+            preflight::set_firewall,
+            preflight::set_autostart
         ])
         .run(tauri::generate_context!())
         .expect("error while running Lynko");

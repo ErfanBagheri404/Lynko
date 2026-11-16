@@ -20,4 +20,31 @@
     <string name="screen_state_idle">idle</string>
     <string name="screen_start">Start mirroring</string>
     <string name="fps_zero">0 fps</string>
+
+    <!-- First-run prep screen -->
+    <string name="prep_title">Four things, once.</string>
+    <string name="prep_lede">Your computer will ask for these anyway. Set them now and the room just works.</string>
+    <string name="prep_taps">Let the computer press</string>
+    <string name="prep_taps_sub">Taps, swipes and keys, only while linked.</string>
+    <string name="prep_mirror">Mirror this screen</string>
+    <string name="prep_mirror_sub">You will confirm the share each session.</string>
+    <string name="prep_mirror_chip">Per session</string>
+    <string name="prep_awake">Stay awake while linked</string>
+    <string name="prep_awake_sub">Stops the link dying when the screen sleeps.</string>
+    <string name="prep_notif">Notifications</string>
+    <string name="prep_notif_sub">Your computer’s messages, as real notifications.</string>
+    <string name="prep_waiting">Waiting for Android…</string>
+    <string name="prep_turn_on">Turn on %1$d things</string>
+    <string name="prep_turn_on_1">Turn on 1 thing</string>
+    <string name="prep_continue">Continue</string>
+    <string name="prep_note">%1$d of 3 on · the rest can wait</string>
+    <string name="prep_entry">Prepare this phone</string>
+    <string name="prep_back">Back</string>
+    <string name="prep_state_on">on</string>
+    <string name="prep_state_off">off</string>
+    <string name="home_hint">Same Wi-Fi · desktop app required</string>
+    <string name="step_1">Start Lynko on this phone</string>
+    <string name="step_2">Enter the PIN shown on your desktop</string>
+    <string name="step_3">Mirror, share and control from the app</string>
+    <string name="how_it_works">HOW IT WORKS</string>
 </resources>

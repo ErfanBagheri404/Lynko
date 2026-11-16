@@ -11,9 +11,10 @@ import {usePreferences, readPreferences, useTransfers, useHotkeys, type Preferen
 import {mapKey} from './enhancements/keyboard.mjs';
 import {filterNotification, isAppSuppressed} from './enhancements/logic.mjs';
 import {HealthPanel, FeatureControls, PrivacyControls} from './enhancements/Panels';
-import {UpdateSection} from './enhancements/Update';
+import {UpdatePrompt, UpdateSection} from './enhancements/Update';
 import {QualitySection, presetDims} from './enhancements/Quality';
 import {text as extra} from './enhancements/strings';
+import Onboarding from './Onboarding';
 import './enhancements/styles.css';
 
 /* ------------------------------------------------------------------ */
@@ -32,7 +33,7 @@ try {
   listenFn = async () => () => {};
 }
 
-const api = { invoke: <T,>(cmd:string, args?:Record<string,unknown>):Promise<T> => {
+export const api = { invoke: <T,>(cmd:string, args?:Record<string,unknown>):Promise<T> => {
   const p = readPreferences();
   const blocked = (cmd.startsWith('inject_') && !p.input) ||
     ((cmd.includes('clipboard') || cmd === 'paste_to_phone') && !p.clipboard) ||
@@ -146,6 +147,9 @@ function useToasts() {
 
 export default function App() {
   const [view, setView] = useState<View>("devices");
+  // First run = flag absent. Continue writes it; Settings' "run setup again"
+  // clears it and re-enters.
+  const [onboarding, setOnboarding] = useState(() => localStorage.getItem("lynko.onboarded") === null);
   const appSetView = useRef(setView);
   appSetView.current = setView;
   const [lang, setLang] = useState<Lang>(() => {
@@ -489,7 +493,10 @@ export default function App() {
         startAudio={startAudio}
         stopAudio={stopAudio}
         screenFps={screenFps}
+        onboarding={onboarding}
+        setOnboarding={setOnboarding}
       />
+      <UpdatePrompt lang={lang} />
       <div className="toasts" aria-live="polite">
         {toasts.map((t) => (
           <div key={t.id} className={`toast toast-${t.kind}`}>
@@ -521,6 +528,7 @@ interface ShellProps {
   startAudio: () => Promise<void>;
   stopAudio: () => Promise<void>;
   screenFps: number;
+  onboarding: boolean; setOnboarding: (v: boolean) => void;
 }
 
 function Shell(props: ShellProps) {
@@ -545,12 +553,28 @@ function Shell(props: ShellProps) {
 
       <IncomingShare lang={lang}/>
       <main className="stage">
-        {view === 'health' && <div className="view"><HealthPanel lang={lang} link={link} lastFrame={props.lastFrame} now={props.now} capable={connectedDevice?.caps.screen_capture} refresh={()=>{void api.invoke('request_status').catch(e=>props.toast(String(e),'err'));}}/></div>}
-        {view === "devices" && <DevicesView {...props} />}
-        {view === "screen" && <ScreenView {...props} />}
-        {view === "files" && <FilesView {...props} />}
-        {view === "notifications" && <NotificationsView {...props} />}
-        {view === "settings" && <SettingsView {...props} />}
+        {props.onboarding ? (
+          <Onboarding
+            lang={lang}
+            prefs={props.prefs}
+            updatePrefs={props.updatePrefs}
+            toast={props.toast}
+            onDone={() => {
+              try { localStorage.setItem("lynko.onboarded", "1"); } catch { /* quota */ }
+              props.setOnboarding(false);
+              setView("devices");
+            }}
+          />
+        ) : (
+          <>
+            {view === 'health' && <div className="view"><HealthPanel lang={lang} link={link} lastFrame={props.lastFrame} now={props.now} capable={connectedDevice?.caps.screen_capture} refresh={()=>{void api.invoke('request_status').catch(e=>props.toast(String(e),'err'));}}/></div>}
+            {view === "devices" && <DevicesView {...props} />}
+            {view === "screen" && <ScreenView {...props} />}
+            {view === "files" && <FilesView {...props} />}
+            {view === "notifications" && <NotificationsView {...props} />}
+            {view === "settings" && <SettingsView {...props} />}
+          </>
+        )}
       </main>
 
       <footer className="status">
@@ -732,7 +756,7 @@ function DevicesView({ devices, link, toast, lang }: ShellProps) {
                 <span className={d.online ? "dev-dot on" : "dev-dot off"} />
                 <div className="who">
                   <strong>{d.name}</strong>
-                  <span className="addr" title={d.address}>{d.id.startsWith("usb:") ? T("via_usb") : d.address}</span>
+                  <span className={d.id.startsWith("usb:") ? "via" : "addr"} title={d.address}>{d.id.startsWith("usb:") ? T("via_usb") : d.address}</span>
                   {d.linked && <span className="linked-tag">{T("status_connected")}</span>}
                 </div>
                 <div className="act">
@@ -753,7 +777,7 @@ function DevicesView({ devices, link, toast, lang }: ShellProps) {
               {unpaired.map((d) => (
                 <div key={d.id} className="devrow">
                   <span className={d.id.startsWith("usb:") ? "dev-dot usb" : "dev-dot on"} />
-                  <div className="who"><strong>{d.name}</strong><span className="addr" title={d.address}>{d.id.startsWith("usb:") ? T("via_usb") : d.address}</span>
+                  <div className="who"><strong>{d.name}</strong><span className={d.id.startsWith("usb:") ? "via" : "addr"} title={d.address}>{d.id.startsWith("usb:") ? T("via_usb") : d.address}</span>
                     {pairUnavailable === d.id && <span role="status" style={{color: "var(--amber, #ffb454)", maxWidth: 340}}>{T("pair_hint_open")}</span>}
                   </div>
                   <button className="btn sm primary" disabled={checkingPair !== null} onClick={() => pair(d)}>{checkingPair === d.id ? T("checking") : T("pair")}</button>
@@ -1540,38 +1564,80 @@ function SettingsView(props: ShellProps) {
   return (
     <div className="view">
       <PageHead title={T("settings_title")} sub={T("settings_sub")} />
-      <FeatureControls lang={lang} prefs={props.prefs} updatePrefs={props.updatePrefs}/>
-      <SetRow title={extra(lang,'animations')} desc={extra(lang,'motionHint')} on={props.prefs.animations} onToggle={()=>props.updatePrefs({animations:!props.prefs.animations})}/>
-      <SetRow title={extra(lang,'hotkeys')} desc={extra(lang,'hotkeysHint')} on={props.prefs.hotkeys} onToggle={()=>props.updatePrefs({hotkeys:!props.prefs.hotkeys})}/>
-      <div className="card">
-        <div className="set-row">
-          <div className="what"><strong>{T("language")}</strong></div>
-          <div className="lang-switch">
-            {LANGS.map((l) => (
+      <SetGroup title={T("sec_appearance")}>
+        <div className="card">
+          <div className="set-row">
+            <div className="what"><strong>{T("language")}</strong></div>
+            <div className="ctl">
+              <div className="lang-switch">
+                {LANGS.map((l) => (
+                  <button
+                    key={l.id}
+                    className={lang === l.id ? "lang-btn on" : "lang-btn"}
+                    onClick={() => setLang(l.id)}
+                    title={l.label}
+                  >
+                    {l.autonym}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <SetRow title={extra(lang,'animations')} desc={extra(lang,'motionHint')} on={props.prefs.animations} onToggle={()=>props.updatePrefs({animations:!props.prefs.animations})}/>
+          <QualitySection lang={lang}/>
+        </div>
+      </SetGroup>
+      <SetGroup title={T("sec_connection")}>
+        <div className="card">
+          <SetRow title={T("autoconnect")} desc={T("autoconnect_desc")} on={autoReconnect} onToggle={() => toggleAutoReconnect(!autoReconnect)} />
+          <SetRow title={extra(lang,'hotkeys')} desc={extra(lang,'hotkeysHint')} on={props.prefs.hotkeys} onToggle={()=>props.updatePrefs({hotkeys:!props.prefs.hotkeys})}/>
+        </div>
+      </SetGroup>
+      <SetGroup title={T("sec_features")} hint={extra(lang,'trustHint')}>
+        <FeatureControls lang={lang} prefs={props.prefs} updatePrefs={props.updatePrefs}/>
+      </SetGroup>
+      <SetGroup title={T("sec_notifications")}>
+        <div className="card">
+          <SetRow title={T("desktop_notifs")} desc={T("desktop_notifs_desc")} on={toasts} onToggle={() => toggleToasts(!toasts)} />
+        </div>
+      </SetGroup>
+      <SetGroup title={T("sec_updates")}>
+        <UpdateSection lang={lang}/>
+      </SetGroup>
+      <SetGroup title={T("sec_about")}>
+        <div className="card">
+          <div className="set-row">
+            <div className="what"><strong>{T("about")}</strong><span>{T("inspired_by")}</span></div>
+          </div>
+          <div className="set-row">
+            <div className="what"><strong>{T("onboarding")}</strong><span>{T("onboarding_desc")}</span></div>
+            <div className="ctl">
               <button
-                key={l.id}
-                className={lang === l.id ? "lang-btn on" : "lang-btn"}
-                onClick={() => setLang(l.id)}
-                title={l.label}
+                className="btn ghost"
+                onClick={() => {
+                  try { localStorage.removeItem("lynko.onboarded"); } catch { /* quota */ }
+                  props.setOnboarding(true);
+                }}
               >
-                {l.autonym}
+                {T("onboarding_go")}
               </button>
-            ))}
+            </div>
           </div>
         </div>
-      </div>
-      <div className="card">
-        <SetRow title={T("autoconnect")} desc={T("autoconnect_desc")} on={autoReconnect} onToggle={() => toggleAutoReconnect(!autoReconnect)} />
-        <SetRow title={T("desktop_notifs")} desc={T("desktop_notifs_desc")} on={toasts} onToggle={() => toggleToasts(!toasts)} />
-      </div>
-      <div className="card about-card">
-        <div className="set-row">
-          <div className="what"><strong>{T("about")}</strong><span>{T("inspired_by")}</span></div>
-        </div>
-      </div>
-      <UpdateSection lang={lang}/>
-      <QualitySection lang={lang}/>
+      </SetGroup>
     </div>
+  );
+}
+
+/* One titled lane of settings rows. Card edges do the grouping; the title
+   only names it, so the eye scans six short blocks instead of ten boxes. */
+function SetGroup({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <section className="set-group">
+      <h2 className="set-group-title">{title}</h2>
+      {hint && <p className="set-group-hint">{hint}</p>}
+      {children}
+    </section>
   );
 }
 

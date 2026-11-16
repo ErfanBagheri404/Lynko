@@ -4,5 +4,13 @@
         <item name="android:statusBarColor">#0A0B0D</item>
         <item name="android:navigationBarColor">#0A0B0D</item>
         <item name="android:windowBackground">#0A0B0D</item>
+        <item name="colorPrimary">#FFB454</item>
+        <item name="colorOnPrimary">#1A1006</item>
+        <item name="colorSecondary">#FFB454</item>
+        <item name="android:colorAccent">#FFB454</item>
+        <item name="colorControlActivated">#FFB454</item>
+        <item name="colorControlNormal">#3A3D42</item>
+        <item name="android:textColorPrimary">#E8E6E1</item>
+        <item name="android:textColorSecondary">#8B8D90</item>
     </style>
 </resources>

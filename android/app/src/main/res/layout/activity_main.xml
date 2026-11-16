@@ -7,7 +7,7 @@
     android:orientation="vertical"
     android:background="#0A0B0D">
 
-    <!-- Home tab (scrollable) -->
+    <!-- Home tab -->
     <ScrollView
         android:id="@+id/homeContainer"
         android:layout_width="match_parent"
@@ -18,149 +18,222 @@
 
         <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
+            android:layout_height="match_parent"
             android:orientation="vertical"
             android:paddingStart="24dp"
-            android:paddingEnd="24dp">
+            android:paddingEnd="24dp"
+            android:paddingTop="22dp"
+            android:paddingBottom="18dp">
 
-            <!-- ================= header lane ================= -->
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="36dp"
-                android:text="@string/app_name"
-                android:textColor="#E8E6E1"
-                android:fontFamily="@font/lynko_ui"
-                android:textSize="34sp"
-                android:textStyle="bold"
-                android:letterSpacing="-0.03" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
-                android:layout_marginBottom="20dp"
-                android:text="@string/app_tagline"
-                android:textColor="#8B8D90"
-                android:fontFamily="@font/lynko_ui"
-                android:textSize="13sp" />
-
-            <!-- ================= 01 · SIGNAL ================= -->
+            <!-- brand -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
                 android:gravity="center_vertical">
 
-                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="01" android:textColor="#555658" android:fontFamily="monospace" android:textSize="11sp" />
-                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:layout_marginStart="10dp" android:text="@string/section_signal" android:textColor="#555658"
-                    android:fontFamily="@font/lynko_ui" android:textSize="11sp" android:textStyle="bold" android:letterSpacing="0.14" />
-                <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" android:layout_marginStart="10dp" android:background="#15161A" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="LYNKO"
+                    android:textColor="#E8E6E1"
+                    android:fontFamily="monospace"
+                    android:textSize="11sp"
+                    android:letterSpacing="0.30" />
+
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="0dp"
+                    android:layout_weight="1" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/app_tagline"
+                    android:textColor="#8A8C90"
+                    android:fontFamily="monospace"
+                    android:textSize="10sp" />
             </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="18dp"
+                android:background="#1A1B1E" />
 
             <LinearLayout
-                android:id="@+id/statusCard"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:gravity="center_vertical">
+
+            <!-- status card -->
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
                 android:orientation="vertical"
-                android:background="@drawable/status_card"
-                android:padding="18dp">
+                android:padding="22dp"
+                android:background="@drawable/card_surface">
 
-                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:orientation="horizontal" android:gravity="center_vertical">
-                    <View android:id="@+id/statusDot" android:layout_width="8dp" android:layout_height="8dp" android:background="@drawable/dot_idle" />
-                    <TextView android:id="@+id/statusTitle" android:layout_width="wrap_content" android:layout_height="wrap_content"
-                        android:layout_marginStart="12dp" android:text="@string/not_running" android:textColor="#E8E6E1"
-                        android:fontFamily="@font/lynko_ui" android:textSize="16sp" android:textStyle="bold" />
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <View
+                        android:id="@+id/statusDot"
+                        android:layout_width="8dp"
+                        android:layout_height="8dp"
+                        android:background="@drawable/dot_idle" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="10dp"
+                        android:text="LINK"
+                        android:textColor="#8A8C90"
+                        android:fontFamily="monospace"
+                        android:textSize="10sp"
+                        android:letterSpacing="0.26" />
                 </LinearLayout>
-                <TextView android:id="@+id/statusSub" android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp" android:text="" android:textColor="#8B8D90"
-                    android:fontFamily="@font/lynko_ui" android:textSize="13sp" android:lineSpacingExtra="3dp" />
-                <TextView android:id="@+id/pinText" android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:layout_marginTop="14dp" android:gravity="center" android:text="" android:textColor="#FFB454"
-                    android:fontFamily="monospace" android:textSize="20sp" android:letterSpacing="0.3" android:visibility="gone" />
+
+                <TextView
+                    android:id="@+id/statusTitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:text="@string/not_running"
+                    android:textColor="#E8E6E1"
+                    android:fontFamily="@font/lynko_ui"
+                    android:textStyle="bold"
+                    android:textSize="34sp" />
+
+                <TextView
+                    android:id="@+id/statusSub"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:textColor="#8B8D90"
+                    android:fontFamily="@font/lynko_ui"
+                    android:textSize="14sp"
+                    android:lineSpacingExtra="4dp" />
+
+                <TextView
+                    android:id="@+id/pinText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="18dp"
+                    android:text=""
+                    android:textColor="#FFB454"
+                    android:fontFamily="monospace"
+                    android:textSize="22sp"
+                    android:letterSpacing="0.2"
+                    android:visibility="gone" />
             </LinearLayout>
 
-            <!-- ================= 02 · REQUIRES ================= -->
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:layout_marginTop="20dp" android:orientation="horizontal" android:gravity="center_vertical">
-                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="02" android:textColor="#555658" android:fontFamily="monospace" android:textSize="11sp" />
-                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:layout_marginStart="10dp" android:text="@string/requires" android:textColor="#555658"
-                    android:fontFamily="@font/lynko_ui" android:textSize="11sp" android:textStyle="bold" android:letterSpacing="0.14" />
-                <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" android:layout_marginStart="10dp" android:background="#15161A" />
-            </LinearLayout>
+            <!-- steps -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="32dp"
+                android:layout_marginBottom="14dp"
+                android:text="@string/how_it_works"
+                android:textColor="#6A6C70"
+                android:fontFamily="monospace"
+                android:textSize="10sp"
+                android:letterSpacing="0.24" />
 
-            <!-- perm: screen -->
-            <LinearLayout android:id="@+id/permScreen" android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="46dp" android:paddingTop="9dp" android:paddingBottom="9dp">
-                <TextView android:id="@+id/permScreenIcon" android:layout_width="22dp" android:layout_height="22dp"
-                    android:gravity="center" android:text="•" android:textColor="#FFB454" android:textSize="15sp" android:fontFamily="monospace" android:includeFontPadding="false" />
-                <TextView android:id="@+id/permScreenText" android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:layout_marginStart="12dp" android:text="" android:textColor="#8B8D90" android:fontFamily="@font/lynko_ui" android:textSize="14sp" />
-            </LinearLayout>
-            <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#15161A" />
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
 
-            <!-- perm: a11y -->
-            <LinearLayout android:id="@+id/permA11y" android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="46dp" android:paddingTop="9dp" android:paddingBottom="9dp">
-                <TextView android:id="@+id/permA11yIcon" android:layout_width="22dp" android:layout_height="22dp"
-                    android:gravity="center" android:text="•" android:textColor="#FFB454" android:textSize="15sp" android:fontFamily="monospace" android:includeFontPadding="false" />
-                <TextView android:id="@+id/permA11yText" android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:layout_marginStart="12dp" android:text="" android:textColor="#8B8D90" android:fontFamily="@font/lynko_ui" android:textSize="14sp" />
-            </LinearLayout>
-            <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#15161A" />
+                    <TextView
+                        android:layout_width="34dp"
+                        android:layout_height="wrap_content"
+                        android:text="01"
+                        android:textColor="#D9A85C"
+                        android:fontFamily="monospace"
+                        android:textSize="11sp" />
 
-            <!-- perm: battery -->
-            <LinearLayout android:id="@+id/permBattery" android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="46dp" android:paddingTop="9dp" android:paddingBottom="9dp">
-                <TextView android:id="@+id/permBatteryIcon" android:layout_width="22dp" android:layout_height="22dp"
-                    android:gravity="center" android:text="•" android:textColor="#FFB454" android:textSize="15sp" android:fontFamily="monospace" android:includeFontPadding="false" />
-                <TextView android:id="@+id/permBatteryText" android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:layout_marginStart="12dp" android:text="" android:textColor="#8B8D90" android:fontFamily="@font/lynko_ui" android:textSize="14sp" />
-            </LinearLayout>
-            <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#15161A" />
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/step_1"
+                        android:textColor="#9A9CA0"
+                        android:fontFamily="@font/lynko_ui"
+                        android:textSize="13sp"
+                        android:lineSpacingExtra="3dp" />
+                </LinearLayout>
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
 
-            <!-- perm: notifications -->
-            <LinearLayout android:id="@+id/permNotif" android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="46dp" android:paddingTop="9dp" android:paddingBottom="9dp">
-                <TextView android:id="@+id/permNotifIcon" android:layout_width="22dp" android:layout_height="22dp"
-                    android:gravity="center" android:text="•" android:textColor="#FFB454" android:textSize="15sp" android:fontFamily="monospace" android:includeFontPadding="false" />
-                <TextView android:id="@+id/permNotifText" android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:layout_marginStart="12dp" android:text="" android:textColor="#8B8D90" android:fontFamily="@font/lynko_ui" android:textSize="14sp" />
-            </LinearLayout>
+                    <TextView
+                        android:layout_width="34dp"
+                        android:layout_height="wrap_content"
+                        android:text="02"
+                        android:textColor="#D9A85C"
+                        android:fontFamily="monospace"
+                        android:textSize="11sp" />
 
-            <!-- ================= 03 · START ================= -->
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:layout_marginTop="20dp" android:orientation="horizontal" android:gravity="center_vertical">
-                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="03" android:textColor="#555658" android:fontFamily="monospace" android:textSize="11sp" />
-                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:layout_marginStart="10dp" android:text="@string/section_start" android:textColor="#555658"
-                    android:fontFamily="@font/lynko_ui" android:textSize="11sp" android:textStyle="bold" android:letterSpacing="0.14" />
-                <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" android:layout_marginStart="10dp" android:background="#15161A" />
-            </LinearLayout>
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/step_2"
+                        android:textColor="#9A9CA0"
+                        android:fontFamily="@font/lynko_ui"
+                        android:textSize="13sp"
+                        android:lineSpacingExtra="3dp" />
+                </LinearLayout>
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="34dp"
+                        android:layout_height="wrap_content"
+                        android:text="03"
+                        android:textColor="#D9A85C"
+                        android:fontFamily="monospace"
+                        android:textSize="11sp" />
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/step_3"
+                        android:textColor="#9A9CA0"
+                        android:fontFamily="@font/lynko_ui"
+                        android:textSize="13sp"
+                        android:lineSpacingExtra="3dp" />
+                </LinearLayout>
 
             <Button
                 android:id="@+id/startBtn"
                 android:layout_width="match_parent"
                 android:layout_height="56dp"
-                android:layout_marginTop="12dp"
+                android:layout_marginTop="32dp"
+                android:textAllCaps="true"
                 android:text="@string/start"
                 android:textColor="#1A1006"
                 android:fontFamily="@font/lynko_ui"
-                android:textSize="15sp"
+                android:textSize="13sp"
                 android:textStyle="bold"
-                android:letterSpacing="0.02"
+                android:maxLines="1"
+                android:paddingStart="0dp"
+                android:paddingEnd="0dp"
+                android:letterSpacing="0.08"
                 android:background="@drawable/btn_amber"
                 app:backgroundTint="@null"
                 android:stateListAnimator="@null" />
-
-            <Space android:layout_width="match_parent" android:layout_height="20dp" />
+            </LinearLayout>
         </LinearLayout>
     </ScrollView>
 
@@ -174,43 +247,83 @@
 
     <ScrollView android:id="@+id/settingsContainer" android:layout_width="match_parent"
         android:layout_height="0dp" android:layout_weight="1" android:visibility="gone" android:fillViewport="true">
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:orientation="vertical" android:padding="24dp">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent"
+            android:orientation="vertical" android:paddingStart="24dp" android:paddingEnd="24dp" android:paddingTop="26dp">
+
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="SETTINGS" android:textColor="#8A8C90" android:fontFamily="monospace"
+                android:textSize="10sp" android:letterSpacing="0.26" />
+
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:text="@string/nav_settings" android:textColor="#E8E6E1" android:textSize="24sp"
+                android:layout_marginTop="10dp" android:layout_marginBottom="28dp"
+                android:text="@string/nav_settings" android:textColor="#E8E6E1" android:textSize="30sp"
                 android:textStyle="bold" android:fontFamily="@font/lynko_ui" />
+
+            <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#1A1B1E" />
+
             <androidx.appcompat.widget.SwitchCompat
                 android:id="@+id/motionToggle"
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:minHeight="48dp" android:layout_marginTop="16dp"
-                android:text="@string/interface_animations" android:textColor="#8B8D90"
-                android:fontFamily="@font/lynko_ui" android:textSize="14sp" />
-            <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#303236" />
-            <Button android:id="@+id/audioPermission" android:layout_width="match_parent" android:layout_height="56dp"
-                android:text="@string/audio_permission" android:textColor="#FFB454"
-                android:fontFamily="@font/lynko_ui" android:textStyle="bold" android:textSize="15sp"
-                android:gravity="start|center_vertical" android:textAlignment="viewStart"
-                android:background="?attr/selectableItemBackground" />
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/audio_permission_hint"
-                android:textColor="#8B8D90" android:textSize="13sp" android:fontFamily="@font/lynko_ui" />
-            <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#303236" />
-            <Button android:id="@+id/privacyPolicy" android:layout_width="match_parent" android:layout_height="56dp"
-                android:text="@string/privacy_policy_button" android:textColor="#8B8D90"
-                android:fontFamily="@font/lynko_ui" android:textSize="15sp"
-                android:gravity="start|center_vertical" android:textAlignment="viewStart"
-                android:background="?attr/selectableItemBackground" />
+                android:layout_width="match_parent" android:layout_height="56dp"
+                android:paddingStart="0dp" android:paddingEnd="0dp"
+                app:thumbTint="@color/switch_thumb" app:trackTint="@color/switch_track"
+                android:text="@string/interface_animations" android:textColor="#E8E6E1"
+                android:fontFamily="@font/lynko_ui" android:textSize="15sp" />
+
+            <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#1A1B1E" />
+
+            <LinearLayout android:id="@+id/audioPermission" android:layout_width="match_parent" android:layout_height="56dp"
+                android:orientation="horizontal" android:gravity="center_vertical"
+                android:background="?attr/selectableItemBackground">
+                <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                    android:text="@string/audio_permission" android:textColor="#E8E6E1" android:fontFamily="@font/lynko_ui" android:textSize="15sp" />
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="›" android:textColor="#8B8D90" android:textSize="18sp" android:fontFamily="monospace" />
+            </LinearLayout>
+
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginBottom="18dp" android:text="@string/audio_permission_hint"
+                android:textColor="#8A8C90" android:textSize="12sp" android:lineSpacingExtra="4dp"
+                android:fontFamily="@font/lynko_ui" />
+
+            <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#1A1B1E" />
+
+            <LinearLayout android:id="@+id/permPrepare" android:layout_width="match_parent" android:layout_height="56dp"
+                android:orientation="horizontal" android:gravity="center_vertical"
+                android:background="?attr/selectableItemBackground">
+                <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                    android:text="@string/prep_entry" android:textColor="#E8E6E1" android:fontFamily="@font/lynko_ui" android:textSize="15sp" />
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="›" android:textColor="#8B8D90" android:textSize="18sp" android:fontFamily="monospace" />
+            </LinearLayout>
+
+            <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#1A1B1E" />
+
+            <LinearLayout android:id="@+id/privacyPolicy" android:layout_width="match_parent" android:layout_height="56dp"
+                android:orientation="horizontal" android:gravity="center_vertical"
+                android:background="?attr/selectableItemBackground">
+                <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                    android:text="@string/privacy_policy_button" android:textColor="#E8E6E1" android:fontFamily="@font/lynko_ui" android:textSize="15sp" />
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="›" android:textColor="#8B8D90" android:textSize="18sp" android:fontFamily="monospace" />
+            </LinearLayout>
+
+            <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#1A1B1E" />
+
+            <TextView android:id="@+id/settingsVersion" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="24dp" android:text="LYNKO" android:textColor="#8A8C90"
+                android:fontFamily="monospace" android:textSize="9sp" android:letterSpacing="0.2" />
         </LinearLayout>
-    </ScrollView>
+            </ScrollView>
 
     <!-- ================= bottom nav ================= -->
     <LinearLayout
         android:id="@+id/bottomNav"
         android:layout_width="match_parent"
-        android:layout_height="56dp"
-        android:background="#0E0F12"
+        android:layout_height="62dp"
+        android:background="#0A0B0D"
         android:orientation="vertical">
 
-        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#15161A" />
+        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#1A1B1E" />
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -223,6 +336,7 @@
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
                 android:layout_weight="1"
+                android:background="@drawable/nav_item_bg"
                 android:orientation="vertical"
                 android:gravity="center"
                 android:clickable="true"
@@ -249,13 +363,13 @@
                     android:textStyle="bold" />
             </LinearLayout>
 
-            <View android:layout_width="1dp" android:layout_height="match_parent" android:background="#15161A" />
 
             <LinearLayout
                 android:id="@+id/navScreen"
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
                 android:layout_weight="1"
+                android:background="@drawable/nav_item_bg"
                 android:orientation="vertical"
                 android:gravity="center"
                 android:clickable="true"
@@ -280,12 +394,12 @@
                     android:fontFamily="@font/lynko_ui"
                     android:textSize="10sp" />
             </LinearLayout>
-            <View android:layout_width="1dp" android:layout_height="match_parent" android:background="#15161A" />
             <LinearLayout
                 android:id="@+id/navSettings"
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
                 android:layout_weight="1"
+                android:background="@drawable/nav_item_bg"
                 android:orientation="vertical"
                 android:gravity="center"
                 android:clickable="true"
