@@ -42,4 +42,9 @@
     <string name="prep_back">بازگشت</string>
     <string name="prep_state_on">روشن</string>
     <string name="prep_state_off">خاموش</string>
+    <string name="home_hint">همان وای‌فای · برنامه دسکتاپ لازم است</string>
+    <string name="step_1">لینکو را روی این گوشی باز کن</string>
+    <string name="step_2">پینی را که روی دسکتاپ نشان داده شده وارد کن</string>
+    <string name="step_3">از برنامه آینه کن، فایل بفرست و کنترل کن</string>
+    <string name="how_it_works">چگونه کار می‌کند</string>
 </resources>
