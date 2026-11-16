@@ -1,11 +1,9 @@
 name: Release
 
-# Main pushes build artifacts only; tags publish stable releases.
-# Every tag v* → stable release. Manual dispatch → same as main.
+# Stable releases are published from v* tags only. Manual dispatch builds artifacts.
 
 on:
   push:
-    branches: [main]
     tags: ["v*"]
   workflow_dispatch:
 
@@ -19,7 +17,7 @@ permissions:
 jobs:
   # ────────────────────────────────────────────────────────────────────
   # One version for every platform. A tag v* is authoritative (0.1.2 →
-  # versionName 0.1.2); a main push gets a date-based continuous build
+  # versionName 0.1.2); a manual dispatch gets a date-based build
   # (0.1.20261002) whose versionCode is the date — monotonic, and
   # readable in the filename instead of 0.1.<run_number>.
   # ────────────────────────────────────────────────────────────────────
@@ -324,6 +322,8 @@ jobs:
   macos:
     name: macOS — dmg (universal)
     needs: version
+    # Optional: a macOS runner shortage must not block the stable release.
+    continue-on-error: true
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -378,7 +378,8 @@ jobs:
   # ────────────────────────────────────────────────────────────────────
   publish:
     name: Publish release
-    needs: [version, android, windows, linux, macos]
+    # macOS builds separately and may land late; never gate the release on it.
+    needs: [version, android, windows, linux]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
