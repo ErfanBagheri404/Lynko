@@ -37,7 +37,3 @@ which are unsuitable for Lynko. This file is the spec of what was borrowed and w
 - `core/src/lib.rs`, `sim/src/main.rs` — core + sim harness updates
 - `android/...` — phone-side share sender + consent + privacy strings (Kotlin files listed in git status)
 
-## E2E
-
-`e2e_test.py` (repo root) drives the sim (simulator) end-to-end: phone share → desktop receive.
-Run: `python e2e_test.py` from the repo root after `cargo build --release` (sim + core).
