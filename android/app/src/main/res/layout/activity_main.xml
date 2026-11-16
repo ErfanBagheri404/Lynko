@@ -261,6 +261,37 @@
 
             <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#1A1B1E" />
 
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:layout_marginTop="20dp" android:layout_marginBottom="2dp" android:text="@string/sec_general"
+                android:textColor="#8A8C90" android:fontFamily="monospace" android:textSize="10sp"
+                android:letterSpacing="0.2" />
+
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:layout_marginTop="6dp" android:layout_marginBottom="2dp" android:text="@string/language"
+                android:textColor="#E8E6E1" android:fontFamily="@font/lynko_ui" android:textSize="15sp" />
+
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="10dp" android:orientation="horizontal">
+                <TextView android:id="@+id/langEn" android:layout_width="0dp" android:layout_height="40dp"
+                    android:layout_weight="1" android:gravity="center" android:text="English"
+                    android:fontFamily="@font/lynko_ui" android:textSize="13sp" android:textColor="#8B8D90"
+                    android:background="?attr/selectableItemBackground" />
+                <TextView android:id="@+id/langFa" android:layout_width="0dp" android:layout_height="40dp"
+                    android:layout_weight="1" android:gravity="center" android:text="فارسی"
+                    android:fontFamily="@font/lynko_ui" android:textSize="13sp" android:textColor="#8B8D90"
+                    android:background="?attr/selectableItemBackground" />
+                <TextView android:id="@+id/langZh" android:layout_width="0dp" android:layout_height="40dp"
+                    android:layout_weight="1" android:gravity="center" android:text="简体中文"
+                    android:fontFamily="@font/lynko_ui" android:textSize="13sp" android:textColor="#8B8D90"
+                    android:background="?attr/selectableItemBackground" />
+            </LinearLayout>
+
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp" android:text="@string/language_hint"
+                android:textColor="#8B8D90" android:fontFamily="@font/lynko_ui" android:textSize="12sp" />
+
+            <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#1A1B1E" />
+
             <androidx.appcompat.widget.SwitchCompat
                 android:id="@+id/motionToggle"
                 android:layout_width="match_parent" android:layout_height="56dp"
@@ -270,6 +301,11 @@
                 android:fontFamily="@font/lynko_ui" android:textSize="15sp" />
 
             <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#1A1B1E" />
+
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:layout_marginTop="20dp" android:layout_marginBottom="2dp" android:text="@string/sec_device"
+                android:textColor="#8A8C90" android:fontFamily="monospace" android:textSize="10sp"
+                android:letterSpacing="0.2" />
 
             <LinearLayout android:id="@+id/audioPermission" android:layout_width="match_parent" android:layout_height="56dp"
                 android:orientation="horizontal" android:gravity="center_vertical"
@@ -297,6 +333,11 @@
             </LinearLayout>
 
             <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#1A1B1E" />
+
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:layout_marginTop="20dp" android:layout_marginBottom="2dp" android:text="@string/sec_about"
+                android:textColor="#8A8C90" android:fontFamily="monospace" android:textSize="10sp"
+                android:letterSpacing="0.2" />
 
             <LinearLayout android:id="@+id/privacyPolicy" android:layout_width="match_parent" android:layout_height="56dp"
                 android:orientation="horizontal" android:gravity="center_vertical"

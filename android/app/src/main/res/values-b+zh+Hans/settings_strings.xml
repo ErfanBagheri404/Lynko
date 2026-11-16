@@ -1,2 +1,2 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources><string name="nav_settings">设置</string></resources>
+<resources><string name="nav_settings">设置</string><string name="language">语言</string><string name="language_hint">仅应用于 Lynko。</string><string name="sec_general">通用</string><string name="sec_device">设备</string><string name="sec_about">关于</string></resources>

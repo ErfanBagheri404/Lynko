@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 import iconUrl from "../../src-tauri/icons/128x128.png";
 import type { Lang } from "../locales";
@@ -102,8 +103,12 @@ function UpdateModal({ lang, info, onClose }: { lang: Lang; info: UpdateInfo; on
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const download = () => {
-    window.open(info.html_url, "_blank", "noopener");
+  const download = async () => {
+    try {
+      await invoke("open_external", { url: info.html_url });
+    } catch {
+      window.open(info.html_url, "_blank", "noopener");
+    }
     onClose();
   };
 

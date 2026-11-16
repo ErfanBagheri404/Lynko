@@ -17,6 +17,8 @@ import android.widget.Button
 import android.widget.ScrollView
 import android.widget.FrameLayout
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.os.LocaleListCompat
 import androidx.core.app.ActivityCompat
 
 /**
@@ -191,6 +193,28 @@ class MainActivity : AppCompatActivity() {
                 .setView(scroller)
                 .setPositiveButton(android.R.string.ok, null)
                 .show()
+        }
+        val langButtons = mapOf(
+            "en" to findViewById<TextView>(R.id.langEn),
+            "fa" to findViewById<TextView>(R.id.langFa),
+            "zh-Hans" to findViewById<TextView>(R.id.langZh),
+        )
+        // No stored override means follow the phone; AppCompat keeps the choice.
+        val activeTag = AppCompatDelegate.getApplicationLocales().toLanguageTags()
+            .ifEmpty { resources.configuration.locales[0].toLanguageTag() }
+        val activeLang = when {
+            activeTag.startsWith("fa") -> "fa"
+            activeTag.startsWith("zh") -> "zh-Hans"
+            else -> "en"
+        }
+        langButtons.forEach { (tag, btn) ->
+            btn.setTextColor(if (tag == activeLang) 0xFFFFB454.toInt() else 0xFF8B8D90.toInt())
+            btn.setOnClickListener {
+                Haptics.tap(it)
+                if (tag != activeLang) {
+                    AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(tag))
+                }
+            }
         }
         val motionToggle = findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.motionToggle)
         motionToggle.isChecked = getPreferences(Context.MODE_PRIVATE).getBoolean("motion", true)

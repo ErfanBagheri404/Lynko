@@ -1,6 +1,6 @@
 name: Release
 
-# Every push to main → rolling "continuous" prerelease.
+# Main pushes build artifacts only; tags publish stable releases.
 # Every tag v* → stable release. Manual dispatch → same as main.
 
 on:
@@ -29,7 +29,6 @@ jobs:
     outputs:
       version: ${{ steps.ver.outputs.version }}
       code: ${{ steps.ver.outputs.code }}
-      prerelease: ${{ steps.ver.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -40,18 +39,15 @@ jobs:
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             V="${GITHUB_REF_NAME#v}"; V="${V%%-*}"
             CODE=$(echo "$V" | awk -F. '{ printf "%d%03d%03d", $1, $2, $3 }')
-            PRE=false
           else
             # NSIS/MSI cap the patch segment at 65535, so a full date
             # (20261027) is illegal. Day-of-year (yy + DDD = 26301) stays
             # ≤ 99365 and is monotonic across years.
             V="0.1.$(date -u +%y%j)"
             CODE=$(date -u +%Y%m%d)
-            PRE=true
           fi
           echo "version=$V" >> "$GITHUB_OUTPUT"
           echo "code=$CODE" >> "$GITHUB_OUTPUT"
-          echo "prerelease=$PRE" >> "$GITHUB_OUTPUT"
           echo "Lynko $V (code $CODE)"
 
   # ────────────────────────────────────────────────────────────────────
@@ -377,8 +373,8 @@ jobs:
 
   # ────────────────────────────────────────────────────────────────────
   # Publish — collect everything into one GitHub Release
-  # main → rolling "continuous" prerelease (replaced each push)
-  # tag  → stable release "Lynko vX.Y.Z"
+  # tag → stable release (main pushes do not publish)
+  # tag → stable release "Lynko vX.Y.Z"
   # ────────────────────────────────────────────────────────────────────
   publish:
     name: Publish release
@@ -401,42 +397,6 @@ jobs:
               -o -name "*.dmg" \) \
             -exec cp {} flat/ \;
           ls -la flat
-
-      - name: Publish continuous prerelease (main pushes)
-        if: github.ref == 'refs/heads/main'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release delete continuous --yes --cleanup-tag 2>/dev/null || true
-          git config user.name "CI Bot"
-          git config user.email "ci@lynko.app"
-          # GitHub's merge-commit subject is an auto-generated
-          # "Merge pull request #N from …" — useless as a release title.
-          # For merges, the PR title lives in the first line of the body.
-          SUBJ=$(git log -1 --format='%s' "$GITHUB_SHA")
-          case "$SUBJ" in
-            "Merge pull request #"*)
-              SUBJECT=$(git log -1 --format='%b' "$GITHUB_SHA" | head -n1)
-              [ -n "$SUBJECT" ] || SUBJECT="main@$(git rev-parse --short=7 "$GITHUB_SHA")"
-              ;;
-            *) SUBJECT="$SUBJ" ;;
-          esac
-          BODY=$(git log -1 --format='%B' "$GITHUB_SHA")
-          git tag -f -a continuous -m "$SUBJECT" "$GITHUB_SHA"
-          git push origin -f continuous
-          # Per-commit tag so every commit keeps its own build marker.
-          # Named build-* (never v*) so it can't re-trigger this workflow.
-          PER=$(printf 'build-%s-%s' "$(date -u +%Y%m%d)" "$(git rev-parse --short=7 "$GITHUB_SHA")")
-          git tag -a "$PER" -m "$BODY" "$GITHUB_SHA" 2>/dev/null || true
-          git push origin "$PER" 2>/dev/null || true
-          gh release create continuous \
-            --prerelease \
-            --title "Lynko ${{ needs.version.outputs.version }} — $SUBJECT" \
-            --notes "$BODY
-
-          Continuous build from main @ $GITHUB_SHA.
-          APKs are debug-signed until a release keystore is configured." \
-            flat/*
 
       - name: Publish stable release (tags)
         if: startsWith(github.ref, 'refs/tags/v')

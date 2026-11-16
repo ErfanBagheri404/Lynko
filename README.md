@@ -55,7 +55,7 @@ Latest builds live in [**Releases**](https://github.com/ErfanBagheri404/Lynko/re
 
 Android builds are debug-signed for now: install from the APK, allow "install unknown apps" when asked.
 
-Every push to `main` also publishes a rolling **continuous** prerelease, so the desktop update check always has something newer to point at.
+Releases are published from `v*` tags; every push to `main` builds artifacts without publishing a release.
 
 ## 🚀 Quick start
 

@@ -1285,6 +1285,39 @@ fn reveal_path(path: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Open an external release page in the default browser. Tauri's WebView
+/// swallows window.open because no on_new_window handler is registered.
+#[tauri::command]
+fn open_external(url: String) -> Result<(), String> {
+    if !url.starts_with("https://github.com/ErfanBagheri404/Lynko") {
+        return Err("blocked URL".into());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", &url])
+            .creation_flags(0x08000000)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 fn desktop_name() -> String {
     std::env::var("COMPUTERNAME")
@@ -1658,6 +1691,7 @@ fn main() {
             get_pc_clipboard,
             toggle_hotkeys,
             check_update,
+            open_external,
             set_dnd,
             request_app_list,
             launch_app,
