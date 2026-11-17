@@ -49,4 +49,19 @@
     <string name="step_2">输入桌面端显示的 PIN</string>
     <string name="step_3">从应用镜像、分享和控制</string>
     <string name="how_it_works">工作原理</string>
+    <string name="update_check">检查更新</string>
+    <string name="update_desc">来自 GitHub Releases 的新版本</string>
+    <string name="update_checking">正在检查…</string>
+    <string name="update_uptodate">已是最新版本</string>
+    <string name="update_available">有可用更新</string>
+    <string name="update_failed">检查失败</string>
+    <string name="update_title">有可用更新</string>
+    <string name="update_whatsnew">更新内容</string>
+    <string name="update_download">下载</string>
+    <string name="update_downloading">正在下载…</string>
+    <string name="update_later">稍后</string>
+    <string name="update_published">发布于</string>
+    <string name="update_allow_sources">Lynko 需要允许从此来源安装应用。开启后再点下载。</string>
+    <string name="update_open_settings">打开设置</string>
+    <string name="update_install_failed">下载失败</string>
 </resources>

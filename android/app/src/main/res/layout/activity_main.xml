@@ -339,6 +339,23 @@
                 android:textColor="#8A8C90" android:fontFamily="monospace" android:textSize="10sp"
                 android:letterSpacing="0.2" />
 
+            <LinearLayout android:id="@+id/updateRow" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:minHeight="56dp" android:orientation="horizontal" android:gravity="center_vertical"
+                android:background="?attr/selectableItemBackground">
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                    android:layout_marginTop="12dp" android:layout_marginBottom="12dp" android:orientation="vertical">
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:text="@string/update_check" android:textColor="#E8E6E1" android:fontFamily="@font/lynko_ui" android:textSize="15sp" />
+                    <TextView android:id="@+id/updateSub" android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:layout_marginTop="3dp" android:text="@string/update_desc" android:textColor="#8A8C90"
+                        android:fontFamily="monospace" android:textSize="10sp" android:letterSpacing="0.05" />
+                </LinearLayout>
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="›" android:textColor="#8B8D90" android:textSize="18sp" android:fontFamily="monospace" />
+            </LinearLayout>
+
+            <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#1A1B1E" />
+
             <LinearLayout android:id="@+id/privacyPolicy" android:layout_width="match_parent" android:layout_height="56dp"
                 android:orientation="horizontal" android:gravity="center_vertical"
                 android:background="?attr/selectableItemBackground">

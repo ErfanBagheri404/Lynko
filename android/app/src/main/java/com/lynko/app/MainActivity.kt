@@ -175,6 +175,18 @@ class MainActivity : AppCompatActivity() {
                 showFeedback(getString(R.string.audio_permission_granted))
             } else ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), 102)
         }
+        findViewById<View>(R.id.updateRow).setOnClickListener { v ->
+            Haptics.tap(v)
+            checkUpdates(manual = true)
+        }
+        Update.onChange = { runOnUiThread { renderUpdateRow() } }
+        renderUpdateRow()
+        // Launch check stays silent unless GitHub has a version this build has
+        // not already shown: an update row is enough for the rest.
+        Update.check(this) { r ->
+            val seen = getPreferences(Context.MODE_PRIVATE).getString("lynko_seen_version", "")
+            if (r != null && r.version != seen) showUpdateDialog(r)
+        }
         findViewById<View>(R.id.privacyPolicy).setOnClickListener {
             // setMessage() does not scroll: the long policy got silently cut
             // off mid-sentence, and Myket requires the privacy text to be
@@ -481,6 +493,87 @@ class MainActivity : AppCompatActivity() {
         if (!PhoneState.link) { showFeedback(Loc.t("phone", "share_connect")); return }
         val uris = tab.stagedUris
         chooseSharePeer(uris, tab)
+    }
+
+    /** Settings row: same wording as the desktop card. */
+    private fun renderUpdateRow() {
+        val sub = findViewById<TextView>(R.id.updateSub)
+        val cur = Update.current(this)
+        sub.text = when {
+            Update.busy -> getString(R.string.update_checking)
+            Update.failed -> getString(R.string.update_failed)
+            Update.latest != null -> getString(R.string.update_available) + "  ·  v" + Update.latest!!.version
+            Update.checked -> getString(R.string.update_uptodate) + "  ·  v" + cur
+            else -> getString(R.string.update_desc)
+        }
+    }
+
+    private fun checkUpdates(manual: Boolean) {
+        if (Update.busy) return
+        Update.check(this) { r ->
+            if (r != null) {
+                showUpdateDialog(r)
+            } else if (manual) {
+                showFeedback(getString(if (Update.failed) R.string.update_failed else R.string.update_uptodate))
+            }
+        }
+    }
+
+    private fun seen(v: String) {
+        getPreferences(Context.MODE_PRIVATE).edit().putString("lynko_seen_version", v).apply()
+    }
+
+    private fun showUpdateDialog(r: Update.Release) {
+        val pad = (20 * resources.displayMetrics.density).toInt()
+        val body = TextView(this).apply {
+            text = r.notes.replace("**", "").replace("`", "").ifBlank {
+                if (r.published.isNotEmpty()) getString(R.string.update_published) + " " + r.published else ""
+            }
+            setTextColor(0xFFE8E6E1.toInt())
+            textSize = 13.5f
+            setLineSpacing(0f, 1.2f)
+            setPadding(pad, pad / 2, pad, pad / 2)
+            android.text.util.Linkify.addLinks(this, android.text.util.Linkify.WEB_URLS)
+            movementMethod = android.text.method.LinkMovementMethod.getInstance()
+            setLinkTextColor(0xFFFFB454.toInt())
+        }
+        val head = TextView(this).apply {
+            text = getString(R.string.update_whatsnew).uppercase()
+            setTextColor(0xFF8A8C90.toInt())
+            textSize = 10f
+            letterSpacing = 0.2f
+            typeface = android.graphics.Typeface.MONOSPACE
+            setPadding(pad, pad, pad, 0)
+        }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(head)
+            addView(ScrollView(this@MainActivity).apply { addView(body) })
+        }
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this, R.style.Theme_Lynko_Dialog)
+            .setTitle(getString(R.string.update_available) + "  ·  v" + r.version)
+            .setView(box)
+            .setPositiveButton(R.string.update_download) { _, _ ->
+                seen(r.version)
+                if (r.apk.isEmpty()) {
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(r.page)))
+                    return@setPositiveButton
+                }
+                showFeedback(getString(R.string.update_downloading))
+                Update.download(
+                    this, r,
+                    progress = { _ -> },
+                    fail = { e ->
+                        com.google.android.material.dialog.MaterialAlertDialogBuilder(this, R.style.Theme_Lynko_Dialog)
+                            .setTitle(R.string.update_install_failed)
+                            .setMessage(e)
+                            .setPositiveButton(android.R.string.ok, null)
+                            .show()
+                    },
+                )
+            }
+            .setNegativeButton(R.string.update_later) { _, _ -> seen(r.version) }
+            .show()
     }
 
     /** Text picker dialog — the typed text lands as a cache .txt file. */

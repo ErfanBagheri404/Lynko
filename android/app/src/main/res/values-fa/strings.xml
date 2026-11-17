@@ -47,4 +47,19 @@
     <string name="step_2">پینی را که روی دسکتاپ نشان داده شده وارد کن</string>
     <string name="step_3">از برنامه آینه کن، فایل بفرست و کنترل کن</string>
     <string name="how_it_works">چگونه کار می‌کند</string>
+    <string name="update_check">بررسی به‌روزرسانی</string>
+    <string name="update_desc">نسخه‌های جدید از انتشارهای گیت‌هاب</string>
+    <string name="update_checking">در حال بررسی…</string>
+    <string name="update_uptodate">به‌روز هستید</string>
+    <string name="update_available">نسخه جدید موجود است</string>
+    <string name="update_failed">بررسی ناموفق بود</string>
+    <string name="update_title">نسخه جدید موجود است</string>
+    <string name="update_whatsnew">تازه‌ها</string>
+    <string name="update_download">دانلود</string>
+    <string name="update_downloading">در حال دانلود…</string>
+    <string name="update_later">بعداً</string>
+    <string name="update_published">انتشار</string>
+    <string name="update_allow_sources">برای نصب برنامه از این منبع، لینکو به اجازه نیاز دارد. آن را روشن کنید و دوباره دانلود را بزنید.</string>
+    <string name="update_open_settings">تنظیمات</string>
+    <string name="update_install_failed">دانلود ناموفق بود</string>
 </resources>

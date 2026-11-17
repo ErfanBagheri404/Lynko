@@ -13,4 +13,15 @@
         <item name="android:textColorPrimary">#E8E6E1</item>
         <item name="android:textColorSecondary">#8B8D90</item>
     </style>
+    <!-- Dialogs stay dark even when the phone is in light mode: the app has no
+         light surface, and a white alert made the changelog text invisible. -->
+    <style name="Theme.Lynko.Dialog" parent="Theme.Material3.Dark.Dialog.Alert">
+        <item name="colorPrimary">#FFB454</item>
+        <item name="colorAccent">#FFB454</item>
+        <item name="android:colorAccent">#FFB454</item>
+        <item name="colorSurface">#131417</item>
+        <item name="android:background">#131417</item>
+        <item name="android:textColorPrimary">#E8E6E1</item>
+        <item name="android:textColorSecondary">#8B8D90</item>
+    </style>
 </resources>

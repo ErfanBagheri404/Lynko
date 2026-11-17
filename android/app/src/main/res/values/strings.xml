@@ -47,4 +47,19 @@
     <string name="step_2">Enter the PIN shown on your desktop</string>
     <string name="step_3">Mirror, share and control from the app</string>
     <string name="how_it_works">HOW IT WORKS</string>
+    <string name="update_check">Check for updates</string>
+    <string name="update_desc">New versions from GitHub releases</string>
+    <string name="update_checking">Checking…</string>
+    <string name="update_uptodate">You are up to date</string>
+    <string name="update_available">Update available</string>
+    <string name="update_failed">Check failed</string>
+    <string name="update_title">Update available</string>
+    <string name="update_whatsnew">What is new</string>
+    <string name="update_download">Download</string>
+    <string name="update_downloading">Downloading…</string>
+    <string name="update_later">Later</string>
+    <string name="update_published">Published</string>
+    <string name="update_allow_sources">Lynko needs permission to install apps from this source. Turn it on, then tap Download again.</string>
+    <string name="update_open_settings">Open settings</string>
+    <string name="update_install_failed">Download failed</string>
 </resources>
