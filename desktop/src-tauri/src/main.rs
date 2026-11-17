@@ -1128,6 +1128,32 @@ pub struct UpdateInfo {
     pub published_at: String,
     pub html_url: String,
     pub has_update: bool,
+    /// Installer asset this build can fetch itself; empty when the release
+    /// ships nothing runnable on this platform (the UI falls back to the page).
+    pub download_url: String,
+}
+
+/// The installer to hand to `download_update`, for the platform we're on.
+fn installer_asset(r: &serde_json::Value) -> String {
+    let want: &[&str] = if cfg!(windows) {
+        &["x64-setup.exe", ".msi"]
+    } else if cfg!(target_os = "macos") {
+        &[".dmg"]
+    } else {
+        &[".AppImage", ".deb"]
+    };
+    let empty = Vec::new();
+    let assets = r.get("assets").and_then(|v| v.as_array()).unwrap_or(&empty);
+    for suffix in want {
+        if let Some(u) = assets
+            .iter()
+            .filter_map(|a| a.get("browser_download_url").and_then(|v| v.as_str()))
+            .find(|u| u.ends_with(suffix))
+        {
+            return u.to_string();
+        }
+    }
+    String::new()
 }
 
 /// Query the latest GitHub Release for Lynko. Fallback to /releases (taking the
@@ -1203,6 +1229,8 @@ async fn check_update() -> Result<UpdateInfo, String> {
     // Semver check: parse major.minor.patch. Fallback: string inequality.
     let has_update = is_newer(&cur, &clean_tag);
 
+    let download_url = installer_asset(&json_val);
+
     let info = UpdateInfo {
         current_version: cur,
         latest_version: clean_tag,
@@ -1211,6 +1239,7 @@ async fn check_update() -> Result<UpdateInfo, String> {
         published_at,
         html_url,
         has_update,
+        download_url,
     };
     *lock = Some((std::time::Instant::now(), info.clone()));
     Ok(info)
@@ -1315,6 +1344,79 @@ fn open_external(url: String) -> Result<(), String> {
             .spawn()
             .map_err(|e| e.to_string())?;
     }
+    Ok(())
+}
+
+/// Fetch the release installer to a temp file, emitting `update_progress`
+/// ({downloaded,total} bytes) as it streams. Returns the local path; the UI
+/// then calls `run_update` so it can show "installing" first.
+#[tauri::command]
+async fn download_update(app: tauri::AppHandle, url: String) -> Result<String, String> {
+    const PREFIX: &str = "https://github.com/ErfanBagheri404/Lynko/releases/download/";
+    if !url.starts_with(PREFIX) {
+        return Err("blocked URL".into());
+    }
+    let name = url.rsplit('/').next().filter(|n| !n.is_empty()).ok_or("bad URL")?;
+    let dir = std::env::temp_dir().join("lynko-update");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join(name);
+
+    let client = reqwest::Client::builder()
+        .user_agent("Lynko-Desktop (https://github.com/ErfanBagheri404/Lynko)")
+        .timeout(std::time::Duration::from_secs(1800))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let resp = client.get(&url).send().await.map_err(|e| format!("Network error: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("Download failed: HTTP {}", resp.status()));
+    }
+    let total = resp.content_length().unwrap_or(0);
+    let mut file = std::fs::File::create(&path).map_err(|e| e.to_string())?;
+    let mut got: u64 = 0;
+    let mut last = std::time::Instant::now();
+    let mut stream = resp.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| format!("Download interrupted: {e}"))?;
+        std::io::Write::write_all(&mut file, &chunk).map_err(|e| e.to_string())?;
+        got += chunk.len() as u64;
+        if last.elapsed().as_millis() >= 150 {
+            let _ = app.emit("update_progress", serde_json::json!({ "downloaded": got, "total": total }));
+            last = std::time::Instant::now();
+        }
+    }
+    let _ = app.emit("update_progress", serde_json::json!({ "downloaded": got, "total": total }));
+    Ok(path.to_string_lossy().to_string())
+}
+
+/// Hand the downloaded installer to the OS and quit, so the installer can
+/// replace our own binaries. The wizard stays visible on purpose: a silent
+/// install would need elevation-proof NSIS flags we can't verify from here.
+#[tauri::command]
+fn run_update(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    if !std::path::Path::new(&path).is_file() {
+        return Err("installer missing".into());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", &path])
+            .creation_flags(0x08000000)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open").arg(&path).spawn().map_err(|e| e.to_string())?;
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        std::process::Command::new("xdg-open").arg(&path).spawn().map_err(|e| e.to_string())?;
+    }
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(800));
+        app.exit(0);
+    });
     Ok(())
 }
 
@@ -1692,6 +1794,8 @@ fn main() {
             toggle_hotkeys,
             check_update,
             open_external,
+            download_update,
+            run_update,
             set_dnd,
             request_app_list,
             launch_app,
@@ -1707,6 +1811,27 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Releases carry portable zips and Android APKs too; the in-app updater
+    /// must pick the runnable installer, never the first asset it sees.
+    #[test]
+    fn installer_asset_picks_the_native_installer() {
+        let rel = serde_json::json!({ "assets": [
+            { "browser_download_url": "https://x/Lynko-0.2.4-windows-x64-portable.zip" },
+            { "browser_download_url": "https://x/Lynko_0.2.4_amd64.deb" },
+            { "browser_download_url": "https://x/Lynko_0.2.4_x64-setup.exe" },
+            { "browser_download_url": "https://x/Lynko_0.2.4_x64_en-US.msi" },
+        ]});
+        let want = if cfg!(windows) {
+            "https://x/Lynko_0.2.4_x64-setup.exe"
+        } else if cfg!(target_os = "macos") {
+            ""
+        } else {
+            "https://x/Lynko_0.2.4_amd64.deb"
+        };
+        assert_eq!(installer_asset(&rel), want);
+        assert_eq!(installer_asset(&serde_json::json!({})), "");
+    }
 
     /// The phone parses this with JSONObject, so it must be a single valid
     /// JSON object with t="hello" — a hand-rolled format! string with an

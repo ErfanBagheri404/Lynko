@@ -7,6 +7,7 @@ export type UpdateInfo = {
   release_notes: string;
   published_at: string;
   html_url: string;
+  download_url: string;
   has_update: boolean;
 };
 
@@ -40,6 +41,9 @@ export async function checkUpdate() {
   put({ ...state, busy: true, error: "" });
   try {
     const r = await invokeFn<UpdateInfo>("check_update");
+    /* A manual check should resurface the prompt even if this build was
+     * already announced and dismissed: clear the seen marker first. */
+    if (r.has_update) localStorage.removeItem(SEEN_KEY);
     put({ info: r, busy: false, error: "" });
   } catch (e) {
     put({ ...state, busy: false, error: String(e) });

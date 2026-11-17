@@ -97,6 +97,11 @@ const rich = (line: string) =>
   );
 
 function UpdateModal({ lang, info, onClose }: { lang: Lang; info: UpdateInfo; onClose: () => void }) {
+  const [phase, setPhase] = useState<
+    { kind: "idle" } | { kind: "downloading"; got: number; total: number } | { kind: "installing" }
+  >({ kind: "idle" });
+  const [err, setErr] = useState("");
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
@@ -104,16 +109,41 @@ function UpdateModal({ lang, info, onClose }: { lang: Lang; info: UpdateInfo; on
   }, [onClose]);
 
   const download = async () => {
-    try {
-      await invoke("open_external", { url: info.html_url });
-    } catch {
-      window.open(info.html_url, "_blank", "noopener");
+    // Nothing runnable on this platform: the release page is the only route.
+    if (!info.download_url) {
+      try {
+        await invoke("open_external", { url: info.html_url });
+      } catch {
+        window.open(info.html_url, "_blank", "noopener");
+      }
+      onClose();
+      return;
     }
-    onClose();
+    setErr("");
+    setPhase({ kind: "downloading", got: 0, total: 0 });
+    let un: (() => void) | undefined;
+    try {
+      const { listen } = await import("@tauri-apps/api/event");
+      un = await listen<{ downloaded: number; total: number }>("update_progress", (e) =>
+        setPhase({ kind: "downloading", got: e.payload.downloaded, total: e.payload.total }),
+      );
+      const path = await invoke<string>("download_update", { url: info.download_url });
+      setPhase({ kind: "installing" });
+      await invoke("run_update", { path });
+    } catch (e) {
+      setErr(String(e));
+      setPhase({ kind: "idle" });
+    } finally {
+      un?.();
+    }
   };
 
   const notes = splitNotes(info.release_notes || "");
   const rtl = lang === "fa";
+  const pct = phase.kind === "downloading" && phase.total
+    ? Math.min(100, Math.round((phase.got / phase.total) * 100))
+    : 0;
+  const mb = (n: number) => `${(n / 1048576).toFixed(1)} MB`;
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -151,9 +181,26 @@ function UpdateModal({ lang, info, onClose }: { lang: Lang; info: UpdateInfo; on
           </div>
 
           <div className="updm-actions">
-            <button className="btn primary" onClick={download}>{gt(lang, "download")}</button>
-            <button className="btn ghost" onClick={onClose}>{gt(lang, "later")}</button>
+            {phase.kind === "downloading" ? (
+              <>
+                <div
+                  className="updm-prog" role="progressbar" aria-label={gt(lang, "downloading")}
+                  aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}
+                >
+                  <span style={{ width: `${pct}%` }} />
+                </div>
+                <span className="updm-prog-lbl">
+                  {phase.total ? `${pct}% · ${mb(phase.got)} / ${mb(phase.total)}` : mb(phase.got)}
+                </span>
+              </>
+            ) : (
+              <button className="btn primary" onClick={download} disabled={phase.kind === "installing"}>
+                {phase.kind === "installing" ? gt(lang, "installing") : gt(lang, "download")}
+              </button>
+            )}
+            {phase.kind === "idle" && <button className="btn ghost" onClick={onClose}>{gt(lang, "later")}</button>}
           </div>
+          {!!err && <p className="updm-err">{gt(lang, "downloadFailed")} — {err}</p>}
         </div>
 
         <aside className="updm-side" aria-hidden="true">
@@ -187,5 +234,6 @@ const DEMO_INFO: UpdateInfo = {
   ].join("\n"),
   published_at: "2026-11-14T10:00:00Z",
   html_url: "https://github.com/ErfanBagheri404/Lynko/releases/latest",
+  download_url: "",
   has_update: true,
 };
