@@ -60,6 +60,7 @@
   --hover-strong: #1d1f23;
   --hover-line: rgba(255, 255, 255, 0.22);
   --rail-hover: rgba(255, 255, 255, 0.03);
+  --screen-stripe: rgba(255, 255, 255, 0.015);
   --scroll: #26272b;
   --scroll-hover: #333539;
   color-scheme: dark;
@@ -97,6 +98,7 @@ html[data-theme="light"] {
   --hover-strong: #e5e2db;
   --hover-line: rgba(0, 0, 0, 0.24);
   --rail-hover: rgba(0, 0, 0, 0.035);
+  --screen-stripe: rgba(0, 0, 0, 0.03);
   --scroll: #cfccc6;
   --scroll-hover: #b8b5af;
   color-scheme: light;
@@ -1104,7 +1106,7 @@ input.field:focus {
   background: repeating-linear-gradient(
     -45deg,
     transparent 0 7px,
-    rgba(255, 255, 255, 0.015) 7px 8px
+    var(--screen-stripe) 7px 8px
   );
 }
 

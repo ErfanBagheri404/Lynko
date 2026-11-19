@@ -237,7 +237,7 @@
     "ob_notnow": "Not now",
     "ob_appearance": "Appearance",
     "ob_theme": "Theme",
-    "ob_theme_desc": "Follows your system by default; pick a theme to override.",
+    "ob_theme_desc": "Light by default; pick a theme to override.",
     "ob_theme_system": "System",
     "ob_theme_dark": "Dark",
     "ob_theme_light": "Light",
