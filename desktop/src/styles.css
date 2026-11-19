@@ -1209,10 +1209,19 @@ input.field:focus {
   min-width: 60px;
 }
 
+.file-row .fbar > i,
 .file-row .fbar > div {
   height: 100%;
   background: var(--signal);
   transition: width 200ms var(--ease-out);
+}
+
+.file-row .hook-error {
+  flex-basis: 100%;
+  color: var(--err);
+  font-family: var(--mono);
+  font-size: 11px;
+  white-space: normal;
 }
 
 .file-row .sz,

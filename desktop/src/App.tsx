@@ -125,6 +125,7 @@ interface Toast {
   id: number;
   msg: string;
   kind: "info" | "ok" | "err";
+  at: number;
 }
 
 let toastUid = 0;
@@ -137,7 +138,11 @@ function useToasts() {
     // UI in noise. Action failures still surface in their own inline state.
     if (kind === "err") return console.error(msg);
     const id = ++toastUid;
-    setToasts((t) => [...t.slice(-4), { id, msg, kind }]);
+    const at = Date.now();
+    setToasts((t) => [
+      ...t.filter((x) => !(x.msg === msg && at - x.at < 4000)).slice(-4),
+      { id, msg, kind, at },
+    ]);
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4000);
   }, []);
 

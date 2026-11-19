@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createTransferQueue } from './logic.mjs';
-export const defaults = { screen:true, input:true, clipboard:true, files:true, notifications:true, audio:true, hidePreview:false, blockedApps:[] as string[], animations:true, hotkeys:false, theme:'light' as 'system'|'dark'|'light' };
+export const defaults = { screen:true, input:true, clipboard:true, files:true, notifications:true, audio:true, hidePreview:false, blockedApps:[] as string[], animations:true, hotkeys:false, theme:'system' as 'system'|'dark'|'light' };
 export type ThemeChoice = Preferences['theme'];
 /** "system" resolves against the OS preference; explicit choices pass through. */
 export function resolveTheme(choice: ThemeChoice): 'dark' | 'light' {
@@ -14,7 +14,7 @@ export function readPreferences(): Preferences {
     const next = {...defaults};
     for (const key of Object.keys(defaults) as (keyof Preferences)[]) {
       if (key === 'blockedApps') next.blockedApps = Array.isArray(raw[key]) ? raw[key].filter((s:unknown) => typeof s === 'string') : [];
-      else if (key === 'theme') next.theme = raw.theme === 'system' || raw.theme === 'dark' || raw.theme === 'light' ? raw.theme : 'light';
+      else if (key === 'theme') next.theme = raw.theme === 'system' || raw.theme === 'dark' || raw.theme === 'light' ? raw.theme : 'system';
       else if (typeof raw[key] === 'boolean') next[key] = raw[key];
     }
     return next;
@@ -81,7 +81,7 @@ export function useTransfers(api:Bridge, connected:boolean, deviceId:string|unde
     void api.on<TransferEvent>('file_done',({payload:p})=>{
       const item=rows.current.find(f=>f.id===queue.current.active && f.requestId===p.id);
       if (!item) return;
-      item.status=p.ok?'sent':'failed'; item.error=p.error;
+      item.status=p.ok?'sent':'failed'; item.error=p.ok?undefined:(p.error||'Transfer failed');
       if(p.ok) item.written=item.size ?? item.written;
       queue.current.done(item.id); publish(); pump.current();
     }).then(keep);
