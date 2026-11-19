@@ -50,8 +50,9 @@ jobs:
 
   # ────────────────────────────────────────────────────────────────────
   # Android — universal, arm64-v8a, armeabi-v7a, x86_64
-  # Release-signed when ANDROID_KEYSTORE_BASE64 secret exists,
-  # otherwise debug-signed (still sideloadable).
+  # Signed with the persistent keystore from ANDROID_KEYSTORE_BASE64.
+  # Missing secrets fail the job: a runner-generated debug key would make
+  # every release un-upgradable over the previous install.
   # ────────────────────────────────────────────────────────────────────
   android:
     name: Android
@@ -66,6 +67,22 @@ jobs:
           java-version: "17"
           cache: gradle
 
+      - name: Require release keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          missing=()
+          for name in KEYSTORE_B64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            [ -n "${!name}" ] || missing+=("$name")
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing release signing secret(s): ${missing[*]}. Releases require the persistent keystore; refusing to fall back to a runner debug key."
+            exit 1
+          fi
+
       - name: Build release APKs
         working-directory: android
         env:
@@ -76,13 +93,9 @@ jobs:
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
-          if [ -n "$KEYSTORE_B64" ]; then
-            echo "$KEYSTORE_B64" | base64 --decode > app/release.keystore
-            export KEYSTORE_FILE="$PWD/app/release.keystore"
-            echo "signing with injected release keystore"
-          else
-            echo "no keystore secret — falling back to debug signing"
-          fi
+          echo "$KEYSTORE_B64" | base64 --decode > app/release.keystore
+          export KEYSTORE_FILE="$PWD/app/release.keystore"
+          echo "signing with injected release keystore"
           ./gradlew "assemble${FLAVOR^}Release" \
             -PandroidVersionCode=${{ needs.version.outputs.code }} \
             -PandroidVersionName=${{ needs.version.outputs.version }}

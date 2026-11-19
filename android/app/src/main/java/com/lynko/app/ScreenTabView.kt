@@ -27,6 +27,7 @@ class ScreenTabView @JvmOverloads constructor(
     attrs: AttributeSet? = null,
     defStyleAttr: Int = 0,
 ) : FrameLayout(context, attrs, defStyleAttr) {
+    private val pal = Pal(context)
 
     interface Callbacks {
         fun onStartMirror()
@@ -86,7 +87,7 @@ class ScreenTabView @JvmOverloads constructor(
             else -> Loc.t("phone", "screen_state_idle")
         }
         screenState.setTextColor(
-            if (mirroring) 0xFFFFB454.toInt() else 0xFF555658.toInt()
+            if (mirroring) pal.amber else pal.faint
         )
         btnToggle.text = if (mirroring)
             Loc.t("phone", "screen_stop")

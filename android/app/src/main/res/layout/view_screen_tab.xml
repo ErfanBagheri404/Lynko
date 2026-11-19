@@ -3,7 +3,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#0A0B0D">
+    android:background="@color/paper">
 
     <!-- header -->
     <LinearLayout
@@ -21,13 +21,13 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="@string/section_screen"
-            android:textColor="#555658"
+            android:textColor="@color/faint"
             android:fontFamily="@font/lynko_ui"
             android:textSize="11sp"
             android:textStyle="bold"
             android:letterSpacing="0.14" />
 
-        <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="2" android:background="#15161A" />
+        <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="2" android:background="@color/stage" />
 
         <TextView
             android:id="@+id/screenState"
@@ -35,7 +35,7 @@
             android:layout_height="wrap_content"
             android:layout_marginStart="10dp"
             android:text="@string/screen_state_idle"
-            android:textColor="#555658"
+            android:textColor="@color/faint"
             android:fontFamily="monospace"
             android:textSize="11sp" />
     </LinearLayout>
@@ -45,7 +45,7 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:background="#0E0F12">
+        android:background="@color/well">
 
         <ImageView
             android:id="@+id/previewImg"
@@ -60,7 +60,7 @@
             android:layout_height="wrap_content"
             android:layout_gravity="center"
             android:text=""
-            android:textColor="#555658"
+            android:textColor="@color/faint"
             android:fontFamily="@font/lynko_ui"
             android:textSize="13sp"
             android:gravity="center" />
@@ -76,7 +76,7 @@
         android:paddingEnd="24dp"
         android:paddingTop="10dp"
         android:paddingBottom="10dp"
-        android:background="#0E0F12">
+        android:background="@color/well">
 
         <TextView
             android:id="@+id/fpsText"
@@ -84,7 +84,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="@string/fps_zero"
-            android:textColor="#555658"
+            android:textColor="@color/faint"
             android:fontFamily="monospace"
             android:textSize="11sp" />
 
@@ -93,12 +93,12 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text=""
-            android:textColor="#555658"
+            android:textColor="@color/faint"
             android:fontFamily="monospace"
             android:textSize="11sp" />
     </LinearLayout>
 
-    <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#15161A" />
+    <View android:layout_width="match_parent" android:layout_height="1dp" android:background="@color/stage" />
 
     <!-- primary action -->
     <Button
@@ -109,7 +109,7 @@
         android:layout_marginEnd="24dp"
         android:layout_marginTop="12dp"
         android:text="@string/screen_start"
-        android:textColor="#1A1006"
+        android:textColor="@color/on_amber"
         android:fontFamily="@font/lynko_ui"
         android:textSize="15sp"
         android:textStyle="bold"
