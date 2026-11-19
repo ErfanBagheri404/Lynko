@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { createTransferQueue } from './logic.mjs';
-export const defaults = { screen:true, input:true, clipboard:true, files:true, notifications:true, audio:true, hidePreview:false, blockedApps:[] as string[], animations:true, hotkeys:false };
+export const defaults = { screen:true, input:true, clipboard:true, files:true, notifications:true, audio:true, hidePreview:false, blockedApps:[] as string[], animations:true, hotkeys:false, theme:'light' as 'system'|'dark'|'light' };
+export type ThemeChoice = Preferences['theme'];
+/** "system" resolves against the OS preference; explicit choices pass through. */
+export function resolveTheme(choice: ThemeChoice): 'dark' | 'light' {
+  if (choice !== 'system') return choice;
+  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
 export type Preferences = typeof defaults;
 export function readPreferences(): Preferences {
   try {
@@ -8,6 +14,7 @@ export function readPreferences(): Preferences {
     const next = {...defaults};
     for (const key of Object.keys(defaults) as (keyof Preferences)[]) {
       if (key === 'blockedApps') next.blockedApps = Array.isArray(raw[key]) ? raw[key].filter((s:unknown) => typeof s === 'string') : [];
+      else if (key === 'theme') next.theme = raw.theme === 'system' || raw.theme === 'dark' || raw.theme === 'light' ? raw.theme : 'light';
       else if (typeof raw[key] === 'boolean') next[key] = raw[key];
     }
     return next;
@@ -21,6 +28,14 @@ export function usePreferences() {
     setPrefs(next);
   };
   useEffect(() => { document.documentElement.dataset.motion = prefs.animations ? 'on' : 'off'; }, [prefs.animations]);
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const apply = () => { document.documentElement.dataset.theme = resolveTheme(prefs.theme); };
+    apply();
+    if (prefs.theme !== 'system') return;
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, [prefs.theme]);
   return {prefs, updatePrefs};
 }
 export interface TransferItem {

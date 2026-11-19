@@ -4,6 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Lynko</title>
+    <script>
+      // Set the theme before CSS loads so a saved light preference never flashes dark.
+      try {
+        var t = JSON.parse(localStorage.getItem("lynko-desktop-features") || "{}").theme;
+        document.documentElement.dataset.theme =
+          t === "light" || t === "dark" ? t : "light";
+      } catch (_) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -778,7 +778,7 @@ function DevicesView({ devices, link, toast, lang }: ShellProps) {
                 <div key={d.id} className="devrow">
                   <span className={d.id.startsWith("usb:") ? "dev-dot usb" : "dev-dot on"} />
                   <div className="who"><strong>{d.name}</strong><span className={d.id.startsWith("usb:") ? "via" : "addr"} title={d.address}>{d.id.startsWith("usb:") ? T("via_usb") : d.address}</span>
-                    {pairUnavailable === d.id && <span role="status" style={{color: "var(--amber, #ffb454)", maxWidth: 340}}>{T("pair_hint_open")}</span>}
+                    {pairUnavailable === d.id && <span role="status" style={{color: "var(--signal)", maxWidth: 340}}>{T("pair_hint_open")}</span>}
                   </div>
                   <button className="btn sm primary" disabled={checkingPair !== null} onClick={() => pair(d)}>{checkingPair === d.id ? T("checking") : T("pair")}</button>
                 </div>
@@ -1578,6 +1578,23 @@ function SettingsView(props: ShellProps) {
                     title={l.label}
                   >
                     {l.autonym}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="set-row">
+            <div className="what"><strong>{extra(lang,'theme')}</strong></div>
+            <div className="ctl">
+              <div className="lang-switch">
+                {(['system','dark','light'] as const).map((th) => (
+                  <button
+                    key={th}
+                    className={props.prefs.theme === th ? "lang-btn on" : "lang-btn"}
+                    aria-pressed={props.prefs.theme === th}
+                    onClick={()=>props.updatePrefs({theme:th})}
+                  >
+                    {extra(lang, th === 'system' ? 'themeSystem' : th === 'dark' ? 'themeDark' : 'themeLight')}
                   </button>
                 ))}
               </div>
