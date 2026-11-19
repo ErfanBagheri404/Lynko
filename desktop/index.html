@@ -5,11 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Lynko</title>
     <script>
-      // Set the theme before CSS loads so a saved light preference never flashes dark.
+      // "system" resolves the OS palette before CSS paints; explicit choices pass through.
       try {
         var t = JSON.parse(localStorage.getItem("lynko-desktop-features") || "{}").theme;
         document.documentElement.dataset.theme =
-          t === "light" || t === "dark" ? t : "light";
+          t === "light" || t === "dark" ? t :
+          (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
       } catch (_) {}
     </script>
   </head>
