@@ -69,4 +69,6 @@
     <string name="update_allow_sources">Lynko 需要允许从此来源安装应用。开启后再点下载。</string>
     <string name="update_open_settings">打开设置</string>
     <string name="update_install_failed">下载失败</string>
+    <string name="update_verify_failed">下载的更新不是由本应用签名的有效 Lynko 版本，因此未安装。</string>
+    <string name="update_download_too_large">更新包过大，Lynko 无法安全下载。</string>
 </resources>

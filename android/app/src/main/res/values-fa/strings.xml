@@ -67,4 +67,6 @@
     <string name="update_allow_sources">برای نصب برنامه از این منبع، لینکو به اجازه نیاز دارد. آن را روشن کنید و دوباره دانلود را بزنید.</string>
     <string name="update_open_settings">تنظیمات</string>
     <string name="update_install_failed">دانلود ناموفق بود</string>
+    <string name="update_verify_failed">بسته دانلودشده نسخه معتبر لینکو با امضای این برنامه نیست و نصب نشد.</string>
+    <string name="update_download_too_large">حجم بهروزرسانی بیش از حدی است که لینکو میتواند با ایمنی دانلود کند.</string>
 </resources>
