@@ -3,6 +3,8 @@ package com.lynko.app
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
@@ -13,6 +15,7 @@ import org.json.JSONArray
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.MessageDigest
 
 /**
  * GitHub-releases updater, mirroring the desktop one. One shared result so the
@@ -40,6 +43,11 @@ object Update {
     @Volatile var busy = false
         private set
 
+    @Volatile var downloading = false
+        private set
+
+    private val downloadGate = Any()
+
     @Volatile var failed = false
         private set
 
@@ -51,13 +59,24 @@ object Update {
 
     var onChange: (() -> Unit)? = null
 
+    /** Latest caller wins: a recreation only replaces the callback, never the fetch. */
+    @Volatile private var pending: ((Release?) -> Unit)? = null
+    private val checkGate = Any()
+
     fun current(ctx: Context): String =
         ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName ?: ""
 
-    /** Never throws: failures land in [failed]/[error] and the row says so. */
-    fun check(ctx: Context, done: ((Release?) -> Unit)? = null) {
-        if (busy) return
-        busy = true
+    /**
+     * Never throws: failures land in [failed]/[error] and the row says so.
+     * While a fetch runs, a new caller only replaces the callback: the result
+     * goes to whichever activity is alive when it lands.
+     */
+    fun check(ctx: Context, callback: ((Release?) -> Unit)? = null) {
+        synchronized(checkGate) {
+            pending = callback
+            if (busy) return
+            busy = true
+        }
         failed = false
         error = ""
         onChange?.invoke()
@@ -72,10 +91,19 @@ object Update {
             }
             latest = found
             checked = true
-            busy = false
+            // busy flips on main so a caller arriving before this post is coalesced.
             Handler(Looper.getMainLooper()).post {
+                // Flip busy and take the callback in one gate slot. Otherwise a
+                // caller arriving in between can start a new fetch, only for
+                // this post to steal its callback and leave it uncalled.
+                val latestCb = synchronized(checkGate) {
+                    busy = false
+                    val c = pending
+                    pending = null
+                    c
+                }
                 onChange?.invoke()
-                done?.invoke(found)
+                latestCb?.invoke(found)
             }
         }.start()
     }
@@ -151,13 +179,24 @@ object Update {
         return 0
     }
 
+    /** 150 MB: far above any Lynko build, small enough that a bad URL cannot eat the cache. */
+    private const val MAX_BYTES = 150L * 1024 * 1024
+
     /**
-     * Fetch the APK, then hand it to the system installer. Progress arrives on
-     * the main thread; the caller owns the dialog it is written into.
+     * Fetch the APK into a `.part` file, verify package and signer, then rename
+     * it into place so only a complete, genuine build is ever handed to the
+     * installer. Progress arrives on the main thread; the caller owns the dialog.
      */
-    fun download(activity: Activity, r: Release, progress: (Int) -> Unit, fail: (String) -> Unit) {
+    fun download(activity: Activity, r: Release, progress: (Int) -> Unit, fail: (String) -> Unit): Boolean {
+        synchronized(downloadGate) {
+            if (downloading) return false
+            downloading = true
+        }
         val apk = File(activity.cacheDir, "lynko-${r.version}.apk")
+        val part = File(activity.cacheDir, "lynko-${r.version}.apk.part")
         Thread {
+            val ui = Handler(Looper.getMainLooper())
+            val tooBig = activity.getString(R.string.update_download_too_large)
             try {
                 val c = URL(r.apk).openConnection() as HttpURLConnection
                 c.connectTimeout = 15_000
@@ -165,29 +204,60 @@ object Update {
                 c.instanceFollowRedirects = true
                 if (c.responseCode !in 200..299) throw java.io.IOException("HTTP ${c.responseCode}")
                 val total = c.contentLength.toLong()
+                if (total > MAX_BYTES) throw java.io.IOException(tooBig)
                 c.inputStream.use { ins ->
-                    apk.outputStream().use { out ->
+                    part.outputStream().use { out ->
                         val buf = ByteArray(64 * 1024)
                         var got = 0L
-                        val ui = Handler(Looper.getMainLooper())
                         while (true) {
                             val n = ins.read(buf)
                             if (n < 0) break
-                            out.write(buf, 0, n)
                             got += n
+                            if (got > MAX_BYTES) throw java.io.IOException(tooBig)
+                            out.write(buf, 0, n)
                             if (total > 0) {
-                                val pct = (got * 100 / total).toInt()
+                                val pct = (got * 100 / total).toInt().coerceAtMost(100)
                                 ui.post { progress(pct) }
                             }
                         }
                     }
                 }
-                apk.setReadable(true, false)
-                Handler(Looper.getMainLooper()).post { install(activity, apk) }
+                verify(activity, part)
+                part.setReadable(true, false)
+                apk.delete()
+                if (!part.renameTo(apk)) throw java.io.IOException(activity.getString(R.string.update_install_failed))
+                ui.post { install(activity, apk) }
             } catch (e: Exception) {
-                fail(e.message ?: e.javaClass.simpleName)
+                part.delete()
+                val msg = e.message ?: e.javaClass.simpleName
+                ui.post { fail(msg) }
+            } finally {
+                synchronized(downloadGate) { downloading = false }
             }
         }.start()
+        return true
+    }
+
+    /** Reject anything that is not this app, signed by the key already installed. */
+    @Suppress("DEPRECATION")
+    private fun verify(activity: Activity, apk: File) {
+        val bad = activity.getString(R.string.update_verify_failed)
+        val pm = activity.packageManager
+        val flag = if (Build.VERSION.SDK_INT >= 28)
+            PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
+        val archive = pm.getPackageArchiveInfo(apk.absolutePath, flag) ?: throw java.io.IOException(bad)
+        if (archive.packageName != activity.packageName) throw java.io.IOException(bad)
+        val installed = pm.getPackageInfo(activity.packageName, flag)
+        val expected = certs(installed)
+        if (expected.isEmpty() || certs(archive) != expected) throw java.io.IOException(bad)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun certs(pi: PackageInfo): Set<String> {
+        val sigs = if (Build.VERSION.SDK_INT >= 28) pi.signingInfo?.apkContentsSigners else pi.signatures
+        return sigs.orEmpty().map {
+            MessageDigest.getInstance("SHA-256").digest(it.toByteArray()).joinToString("") { b -> "%02x".format(b) }
+        }.toSet()
     }
 
     private fun install(activity: Activity, apk: File) {

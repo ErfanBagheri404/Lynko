@@ -694,13 +694,17 @@ function DevicesView({ devices, link, toast, lang }: ShellProps) {
   };
 
   const disconnect = async () => {
-    await api.invoke("disconnect");
-    toast(tr(lang, "toasts", "disconnected"), "info");
+    try {
+      await api.invoke("disconnect");
+      toast(tr(lang, "toasts", "disconnected"), "info");
+    } catch (e) { toast(`Disconnect failed: ${e}`, "err"); }
   };
 
   const forget = async (d: Device) => {
-    await api.invoke("forget_device", { deviceId: d.id });
-    toast(tr(lang, "toasts", "forgot").replace("{name}", d.name), "info");
+    try {
+      await api.invoke("forget_device", { deviceId: d.id });
+      toast(tr(lang, "toasts", "forgot").replace("{name}", d.name), "info");
+    } catch (e) { toast(`Forget failed: ${e}`, "err"); }
   };
 
   const paired = devices.filter((d) => d.paired);
@@ -1075,12 +1079,12 @@ function ScreenView(props: ShellProps) {
     if (dragging.current) {
       dragging.current = false;
       const p = norm(ev);
-      try { await api.invoke("inject_drag_end", { x: p.x, y: p.y }); } catch {}
+      try { await api.invoke("inject_drag_end", { x: p.x, y: p.y }); } catch (e) { toast(String(e), "err"); }
       dragStart.current = null;
       return;
     }
     const p = norm(ev);
-    try { await api.invoke("inject_tap", { x: p.x, y: p.y }); } catch {}
+    try { await api.invoke("inject_tap", { x: p.x, y: p.y }); } catch (e) { toast(String(e), "err"); }
   };
 
   const onKey = async (ev: React.KeyboardEvent) => {
@@ -1091,7 +1095,7 @@ function ScreenView(props: ShellProps) {
       try {
         const clip = await api.invoke<string>("get_pc_clipboard");
         if (clip) await api.invoke("inject_text", { text: clip });
-      } catch {}
+      } catch (e) { toast(String(e), "err"); }
       return;
     }
     // Everything else goes through the shared, tested key map — so a modifier
@@ -1106,10 +1110,10 @@ function ScreenView(props: ShellProps) {
     });
     if (act.kind === "drop") return;
     if (act.kind === "text") {
-      try { await api.invoke("inject_text", { text: act.text }); } catch {}
+      try { await api.invoke("inject_text", { text: act.text }); } catch (e) { toast(String(e), "err"); }
     } else {
       ev.preventDefault();
-      try { await api.invoke("inject_key", { key: act.key }); } catch {}
+      try { await api.invoke("inject_key", { key: act.key }); } catch (e) { toast(String(e), "err"); }
     }
   };
 
@@ -1180,7 +1184,7 @@ function ScreenView(props: ShellProps) {
         await document.exitFullscreen();
         setFullscreen(false);
       }
-    } catch {}
+    } catch (e) { toast(String(e), "err"); }
   };
 
   return (
@@ -1234,9 +1238,9 @@ function ScreenView(props: ShellProps) {
             : <button className="rail-icon" onClick={stop} title={T("stop")} aria-label={T("stop")}><IconStop /></button>}
         </div>
         <div className="screen-rail-group">
-          <button className="rail-icon" disabled={!link.connected} onClick={() => { try { void api.invoke("inject_key", { key: "BACK" }); } catch {} }} title={T("back")} aria-label={T("back")}><IconBack /></button>
-          <button className="rail-icon" disabled={!link.connected} onClick={() => { try { void api.invoke("inject_key", { key: "HOME" }); } catch {} }} title={T("home")} aria-label={T("home")}><IconHome /></button>
-          <button className="rail-icon" disabled={!link.connected} onClick={() => { try { void api.invoke("inject_key", { key: "RECENTS" }); } catch {} }} title={T("recents")} aria-label={T("recents")}><IconRecents /></button>
+          <button className="rail-icon" disabled={!link.connected} onClick={() => { void api.invoke("inject_key", { key: "BACK" }).catch(e => toast(String(e), "err")); }} title={T("back")} aria-label={T("back")}><IconBack /></button>
+          <button className="rail-icon" disabled={!link.connected} onClick={() => { void api.invoke("inject_key", { key: "HOME" }).catch(e => toast(String(e), "err")); }} title={T("home")} aria-label={T("home")}><IconHome /></button>
+          <button className="rail-icon" disabled={!link.connected} onClick={() => { void api.invoke("inject_key", { key: "RECENTS" }).catch(e => toast(String(e), "err")); }} title={T("recents")} aria-label={T("recents")}><IconRecents /></button>
         </div>
         <div className="screen-rail-group">
           <button className="rail-icon" disabled={!link.connected} onClick={toggleRotate} title={rotated ? T("upright") : T("rotate")} aria-label={rotated ? T("upright") : T("rotate")}><IconRotate /></button>
@@ -1434,17 +1438,18 @@ function FilesView(props: ShellProps) {
                 <h2>{T("file_queue")}</h2>
               </div>
               {files.map((f, i) => {
-                const pct = f.size && f.written ? Math.min(100, Math.round((f.written / f.size) * 100)) : null;
+                const pct = f.size && f.written != null ? Math.min(100, Math.round((f.written / f.size) * 100)) : null;
+                const live = f.status === "sending" && pct != null;
                 return (
                   <div className="file-row files-row" key={f.id}>
                     <span className="files-row-id" aria-hidden="true">{num(i + 1)}</span>
                     <span className="files-row-name" title={f.name}><IconFiles /><span>{f.name}</span></span>
                     <span className="files-row-state">{extra(lang, f.status)}</span>
-                    <span className="files-row-size">{f.size ? `${(f.size / 1024).toFixed(0)} KB` : "…"}</span>
+                    <span className="files-row-size">{live ? `${(f.written! / 1024).toFixed(0)} / ${(f.size! / 1024).toFixed(0)} KB · ${pct}%` : f.size ? `${(f.size / 1024).toFixed(0)} KB` : "…"}</span>
                     {f.status === "queued" && <button className="btn sm ghost" onClick={() => props.cancelFile(f.id)}>{extra(lang, "cancel")}</button>}
                     {["failed", "cancelled"].includes(f.status) && <button className="btn sm ghost" onClick={() => props.retryFile(f.id)}>{extra(lang, "retry")}</button>}
                     {f.error && <span className="files-row-err" role="status">{f.error}</span>}
-                    {pct != null && f.status === "sent" && (
+                    {pct != null && (f.status === "sent" || live) && (
                       <span className="fbar" aria-hidden="true"><i style={{ width: `${pct}%` }} /></span>
                     )}
                   </div>
@@ -1585,7 +1590,7 @@ function NotificationsView(props: ShellProps) {
 /* ------------------------------------------------------------------ */
 
 function SettingsView(props: ShellProps) {
-  const { lang, setLang } = props;
+  const { lang, setLang, toast } = props;
   // Both toggles persist: flipping one actually does something on THIS run
   // and survives a restart (localStorage), instead of resetting on every
   // navigation the way plain useState(true) did.
@@ -1596,7 +1601,7 @@ function SettingsView(props: ShellProps) {
   const toggleAutoReconnect = (on: boolean) => {
     setAutoReconnect(on);
     localStorage.setItem("lynko-autoreconnect", on ? "1" : "0");
-    void api.invoke("set_auto_reconnect", { on }).catch(() => {});
+    void api.invoke("set_auto_reconnect", { on }).catch(e => toast(String(e), "err"));
   };
   const toggleToasts = (on: boolean) => {
     setToasts(on);

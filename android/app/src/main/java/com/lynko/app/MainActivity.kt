@@ -184,11 +184,10 @@ class MainActivity : AppCompatActivity() {
         Update.onChange = { runOnUiThread { renderUpdateRow() } }
         renderUpdateRow()
         // Launch check stays silent unless GitHub has a version this build has
-        // not already shown: an update row is enough for the rest.
-        Update.check(this) { r ->
-            val seen = getPreferences(Context.MODE_PRIVATE).getString("lynko_seen_version", "")
-            if (r != null && r.version != seen) showUpdateDialog(r)
-        }
+        // not already shown: an update row is enough for the rest. A check that
+        // finished before a recreation replays from Update instead of refetching.
+        if (Update.checked && !Update.failed) promptUpdate(Update.latest)
+        else Update.check(this) { r -> promptUpdate(r) }
         findViewById<View>(R.id.privacyPolicy).setOnClickListener {
             // setMessage() does not scroll: the long policy got silently cut
             // off mid-sentence, and Myket requires the privacy text to be
@@ -529,6 +528,16 @@ class MainActivity : AppCompatActivity() {
         getPreferences(Context.MODE_PRIVATE).edit().putString("lynko_seen_version", v).apply()
     }
 
+    /** A failed download must not be remembered as "already seen". */
+    private fun clearSeen() {
+        getPreferences(Context.MODE_PRIVATE).edit().putString("lynko_seen_version", "").apply()
+    }
+
+    private fun promptUpdate(r: Update.Release?) {
+        val seen = getPreferences(Context.MODE_PRIVATE).getString("lynko_seen_version", "")
+        if (r != null && r.version != seen) showUpdateDialog(r)
+    }
+
     private fun showUpdateDialog(r: Update.Release) {
         val pad = (20 * resources.displayMetrics.density).toInt()
         val body = TextView(this).apply {
@@ -551,35 +560,57 @@ class MainActivity : AppCompatActivity() {
             typeface = android.graphics.Typeface.MONOSPACE
             setPadding(pad, pad, pad, 0)
         }
+        val status = TextView(this).apply {
+            visibility = View.GONE
+            setTextColor(pal.ink1)
+            textSize = 12f
+            setPadding(pad, 0, pad, pad / 2)
+        }
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             addView(head)
             addView(ScrollView(this@MainActivity).apply { addView(body) })
+            addView(status)
         }
-        com.google.android.material.dialog.MaterialAlertDialogBuilder(this, R.style.Theme_Lynko_Dialog)
+        // Keep the dialog open across the download so the user sees progress and
+        // a failure instead of a silent no-op after the button dismisses it.
+        val dialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(this, R.style.Theme_Lynko_Dialog)
             .setTitle(getString(R.string.update_available) + "  ·  v" + r.version)
             .setView(box)
-            .setPositiveButton(R.string.update_download) { _, _ ->
-                seen(r.version)
-                if (r.apk.isEmpty()) {
-                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(r.page)))
-                    return@setPositiveButton
-                }
-                showFeedback(getString(R.string.update_downloading))
-                Update.download(
+            .setPositiveButton(R.string.update_download, null)
+            .setNegativeButton(R.string.update_later) { _, _ -> seen(r.version) }
+            .setOnCancelListener { seen(r.version) }
+            .create()
+        dialog.show()
+        dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).setOnClickListener {
+            seen(r.version)
+            if (r.apk.isEmpty()) {
+                dialog.dismiss()
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(r.page)))
+                return@setOnClickListener
+            }
+            if (!Update.download(
                     this, r,
-                    progress = { _ -> },
+                    progress = { pct ->
+                        status.visibility = View.VISIBLE
+                        status.text = getString(R.string.update_downloading) + " $pct%"
+                    },
                     fail = { e ->
+                        clearSeen()
+                        dialog.dismiss()
                         com.google.android.material.dialog.MaterialAlertDialogBuilder(this, R.style.Theme_Lynko_Dialog)
                             .setTitle(R.string.update_install_failed)
                             .setMessage(e)
                             .setPositiveButton(android.R.string.ok, null)
                             .show()
                     },
-                )
+                )) {
+                showFeedback(getString(R.string.update_downloading))
+                return@setOnClickListener
             }
-            .setNegativeButton(R.string.update_later) { _, _ -> seen(r.version) }
-            .show()
+            status.visibility = View.VISIBLE
+            status.text = getString(R.string.update_downloading)
+        }
     }
 
     /** Text picker dialog — the typed text lands as a cache .txt file. */

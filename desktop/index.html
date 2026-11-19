@@ -8,8 +8,10 @@
       // Set the theme before CSS loads so a saved light preference never flashes dark.
       try {
         var t = JSON.parse(localStorage.getItem("lynko-desktop-features") || "{}").theme;
-        document.documentElement.dataset.theme =
-          t === "light" || t === "dark" ? t : "light";
+        if (t === "system" || (t !== "light" && t !== "dark")) {
+          t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        }
+        document.documentElement.dataset.theme = t;
       } catch (_) {}
     </script>
   </head>

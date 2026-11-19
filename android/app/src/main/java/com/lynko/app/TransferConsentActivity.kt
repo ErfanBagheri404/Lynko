@@ -1,6 +1,5 @@
 package com.lynko.app
 
-import android.app.Activity
 import android.graphics.Typeface
 import android.os.Bundle
 import android.text.TextUtils
@@ -10,6 +9,7 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.res.ResourcesCompat
 
 /**
@@ -21,7 +21,7 @@ import androidx.core.content.res.ResourcesCompat
  * Launched from a Service context — a dialog would need a window token an
  * Activity owns, so this must be a full Activity (NEW_TASK flag required).
  */
-class TransferConsentActivity : Activity() {
+class TransferConsentActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_ALIAS = "alias"
@@ -38,6 +38,9 @@ class TransferConsentActivity : Activity() {
     private val fg get() = pal.ink0
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Same ThemeMode resolution as MainActivity; a plain Activity ignored
+        // the in-app switch and always rendered the system palette.
+        ThemeMode.apply(this)
         super.onCreate(savedInstanceState)
         // This activity can be the very first thing the process launches (consent
         // arrives after a desktop-initiated send), so the locale bundle may not be

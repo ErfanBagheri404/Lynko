@@ -36,9 +36,23 @@ android {
         }
     }
 
-    // Release signing from env (CI). Without a keystore we fall back to the
-    // debug key so CI artifacts remain installable for sideloading.
+    // Release signing comes from the persistent keystore injected by CI.
+    // A release task without it fails at configuration time: a runner's
+    // generated debug key would make future upgrades impossible.
+    // Debug builds never read these variables.
     val ksPath: String? = System.getenv("KEYSTORE_FILE")
+    val wantsRelease = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
+    if (wantsRelease) {
+        val missing = listOf("KEYSTORE_FILE", "KEYSTORE_PASSWORD", "KEY_ALIAS", "KEY_PASSWORD")
+            .filter { System.getenv(it).isNullOrBlank() }
+        if (missing.isNotEmpty()) {
+            throw GradleException(
+                "Release build requires the persistent signing keystore; missing: " +
+                    missing.joinToString() +
+                    ". Inject it via ANDROID_KEYSTORE_BASE64 (CI) or run a debug build.",
+            )
+        }
+    }
 
     signingConfigs {
         if (ksPath != null) {
@@ -54,9 +68,8 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig =
-                if (ksPath != null) signingConfigs.getByName("release")
-                else signingConfigs.getByName("debug")
+            // Never debug-sign a release; a changed key breaks in-place upgrades.
+            if (ksPath != null) signingConfig = signingConfigs.getByName("release")
         }
     }
 
