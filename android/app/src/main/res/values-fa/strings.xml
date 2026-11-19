@@ -22,7 +22,7 @@
     <string name="fps_zero">۰ فریم</string>
 
     <!-- First-run prep screen -->
-    <string name="prep_title">چهار چیز، یک بار.</string>
+    <string name="prep_title">چند چیز، یک بار.</string>
     <string name="prep_lede">کامپیوترت این‌ها را در هر حال می‌خواهد. همین حالا تنظیمشان کن تا همه‌چیز روان کار کند.</string>
     <string name="prep_taps">اجازه فشردن به کامپیوتر</string>
     <string name="prep_taps_sub">لمس، سوایپ و تایپ، فقط هنگام اتصال.</string>
@@ -40,6 +40,11 @@
     <string name="prep_note">از ۳، %1$d روشن · بقیه را بعداً هم می‌شود</string>
     <string name="prep_entry">آماده‌سازی این گوشی</string>
     <string name="prep_back">بازگشت</string>
+    <string name="prep_theme">تم</string>
+    <string name="prep_theme_sub">از سیستم پیروی کن، یا روشن/تیره را ثابت کن.</string>
+    <string name="prep_theme_system">سیستم</string>
+    <string name="prep_theme_dark">تیره</string>
+    <string name="prep_theme_light">روشن</string>
     <string name="prep_state_on">روشن</string>
     <string name="prep_state_off">خاموش</string>
     <string name="home_hint">همان وای‌فای · برنامه دسکتاپ لازم است</string>

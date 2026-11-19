@@ -1,27 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <style name="Theme.Lynko" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="android:statusBarColor">#0A0B0D</item>
-        <item name="android:navigationBarColor">#0A0B0D</item>
-        <item name="android:windowBackground">#0A0B0D</item>
-        <item name="colorPrimary">#FFB454</item>
-        <item name="colorOnPrimary">#1A1006</item>
-        <item name="colorSecondary">#FFB454</item>
-        <item name="android:colorAccent">#FFB454</item>
-        <item name="colorControlActivated">#FFB454</item>
-        <item name="colorControlNormal">#3A3D42</item>
-        <item name="android:textColorPrimary">#E8E6E1</item>
-        <item name="android:textColorSecondary">#8B8D90</item>
+        <item name="android:statusBarColor">@color/paper</item>
+        <item name="android:navigationBarColor">@color/paper</item>
+        <item name="android:windowLightStatusBar">@bool/light_system_bars</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="27">@bool/light_system_bars</item>
+        <item name="android:windowBackground">@color/paper</item>
+        <item name="colorPrimary">@color/amber</item>
+        <item name="colorOnPrimary">@color/on_amber</item>
+        <item name="colorSecondary">@color/amber</item>
+        <item name="android:colorAccent">@color/amber</item>
+        <item name="colorControlActivated">@color/amber</item>
+        <item name="colorControlNormal">@color/control_normal</item>
+        <item name="android:textColorPrimary">@color/ink0</item>
+        <item name="android:textColorSecondary">@color/ink1</item>
     </style>
-    <!-- Dialogs stay dark even when the phone is in light mode: the app has no
-         light surface, and a white alert made the changelog text invisible. -->
-    <style name="Theme.Lynko.Dialog" parent="Theme.Material3.Dark.Dialog.Alert">
-        <item name="colorPrimary">#FFB454</item>
-        <item name="colorAccent">#FFB454</item>
-        <item name="android:colorAccent">#FFB454</item>
-        <item name="colorSurface">#131417</item>
-        <item name="android:background">#131417</item>
-        <item name="android:textColorPrimary">#E8E6E1</item>
-        <item name="android:textColorSecondary">#8B8D90</item>
+    <style name="Theme.Lynko.Dialog" parent="Theme.Material3.DayNight.Dialog.Alert">
+        <item name="colorPrimary">@color/amber</item>
+        <item name="colorAccent">@color/amber</item>
+        <item name="android:colorAccent">@color/amber</item>
+        <item name="colorSurface">@color/card</item>
+        <item name="android:background">@color/card</item>
+        <item name="android:textColorPrimary">@color/ink0</item>
+        <item name="android:textColorSecondary">@color/ink1</item>
     </style>
 </resources>

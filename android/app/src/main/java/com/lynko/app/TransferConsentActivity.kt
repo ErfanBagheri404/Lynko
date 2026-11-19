@@ -32,9 +32,10 @@ class TransferConsentActivity : Activity() {
         private const val MAX_ROWS = 6
     }
 
-    private val sep get() = 0xFF303034.toInt()
-    private val dim get() = 0xFF8B8D90.toInt()
-    private val fg get() = 0xFFE8E6E1.toInt()
+    private val pal by lazy { Pal(this) }
+    private val sep get() = pal.line
+    private val dim get() = pal.ink1
+    private val fg get() = pal.ink0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -54,7 +55,7 @@ class TransferConsentActivity : Activity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(0xFF16181A.toInt())
+            setBackgroundColor(pal.overlay)
             setPadding(dp(24), dp(32), dp(24), dp(24))
         }
 
@@ -68,9 +69,9 @@ class TransferConsentActivity : Activity() {
             }
 
         // Glyph only — no drawable assets shipped in the build (LocalSend parity).
-        add(root, label("⇩", 40f, 0xFF6E7176.toInt()), bottom = dp(14))
+        add(root, label("⇩", 40f, pal.faint2), bottom = dp(14))
         // Alias amber + bold, as the LocalSend receive page header.
-        add(root, label(alias, 26f, 0xFFFFB454.toInt(), bold = true), bottom = dp(6))
+        add(root, label(alias, 26f, pal.amber, bold = true), bottom = dp(6))
         // "wants to send you {n} files" — singular variant when one file.
         val subtitle = if (count == 1) Loc.t("phone", "wants_to_send_one")
         else Loc.t("phone", "wants_to_send_n").replace("{n}", count.toString())
@@ -124,7 +125,7 @@ class TransferConsentActivity : Activity() {
         val accept = Button(this).apply {
             text = Loc.t("phone", "accept")
             typeface = uiBold; textSize = 15f
-            setTextColor(0xFF1A1006.toInt())
+            setTextColor(pal.onAmber)
             background = ResourcesCompat.getDrawable(resources, R.drawable.btn_amber, null)
             stateListAnimator = null
             setOnClickListener { v -> Haptics.tap(v); answer(true) }

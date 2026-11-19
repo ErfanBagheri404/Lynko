@@ -233,6 +233,12 @@
     "ob_cta_all": "继续",
     "ob_cta_n": "打开 {n} 项",
     "ob_notnow": "稍后再说",
+    "ob_appearance": "外观",
+    "ob_theme": "主题",
+    "ob_theme_desc": "默认跟随系统，也可手动选择。",
+    "ob_theme_system": "跟随系统",
+    "ob_theme_dark": "深色",
+    "ob_theme_light": "浅色",
     "ob_local_only": "仅限局域网"
   },
   "settings": {

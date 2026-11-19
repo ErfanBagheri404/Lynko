@@ -1,5 +1,6 @@
 package com.lynko.app
 
+import android.annotation.SuppressLint
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioPlaybackCaptureConfiguration
@@ -17,6 +18,7 @@ import org.json.JSONObject
  * the desktop decodes that first, so an LF1-framed audio chunk was swallowed
  * as a garbage file chunk and never played.
  */
+@SuppressLint("NewApi")
 class AudioSession(
     private val projection: MediaProjection,
     private val sendBinary: (ByteArray) -> Unit,

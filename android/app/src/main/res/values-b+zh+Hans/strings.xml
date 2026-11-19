@@ -24,7 +24,7 @@
     <string name="screen_state_idle">空闲</string>
     <string name="screen_start">开始投屏</string>
     <string name="fps_zero">0 帧</string>
-    <string name="prep_title">四件事，一次搞定。</string>
+    <string name="prep_title">几件事，一次搞定。</string>
     <string name="prep_lede">电脑迟早会问你要这些权限。现在设置好，一切就能顺畅运行。</string>
     <string name="prep_taps">允许电脑操作</string>
     <string name="prep_taps_sub">仅在连接时响应点按、滑动和按键。</string>
@@ -42,6 +42,11 @@
     <string name="prep_note">已开启 %1$d/3 项 · 其余可以稍后再说</string>
     <string name="prep_entry">准备这台手机</string>
     <string name="prep_back">返回</string>
+    <string name="prep_theme">主题</string>
+    <string name="prep_theme_sub">跟随系统，或固定浅色/深色。</string>
+    <string name="prep_theme_system">跟随系统</string>
+    <string name="prep_theme_dark">深色</string>
+    <string name="prep_theme_light">浅色</string>
     <string name="prep_state_on">开</string>
     <string name="prep_state_off">关</string>
     <string name="home_hint">同一 Wi-Fi · 需要桌面应用</string>

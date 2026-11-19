@@ -22,7 +22,7 @@
     <string name="fps_zero">0 fps</string>
 
     <!-- First-run prep screen -->
-    <string name="prep_title">Four things, once.</string>
+    <string name="prep_title">A few things, once.</string>
     <string name="prep_lede">Your computer will ask for these anyway. Set them now and the room just works.</string>
     <string name="prep_taps">Let the computer press</string>
     <string name="prep_taps_sub">Taps, swipes and keys, only while linked.</string>
@@ -40,6 +40,11 @@
     <string name="prep_note">%1$d of 3 on · the rest can wait</string>
     <string name="prep_entry">Prepare this phone</string>
     <string name="prep_back">Back</string>
+    <string name="prep_theme">Theme</string>
+    <string name="prep_theme_sub">Match the system, or pin light or dark.</string>
+    <string name="prep_theme_system">System</string>
+    <string name="prep_theme_dark">Dark</string>
+    <string name="prep_theme_light">Light</string>
     <string name="prep_state_on">on</string>
     <string name="prep_state_off">off</string>
     <string name="home_hint">Same Wi-Fi · desktop app required</string>

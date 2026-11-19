@@ -36,17 +36,32 @@ class PrepView(private val act: Activity, private val firstRun: Boolean) : Linea
 
     private val ui: Typeface? = ResourcesCompat.getFont(context, R.font.lynko_ui)
     private val uiBold: Typeface = Typeface.create(ui, Typeface.BOLD)
-    private val amber = 0xFFFFB454.toInt()
-    private val fgColor = 0xFFE8E6E1.toInt()
-    private val dimColor = 0xFF8B8D90.toInt()
-    private val faintColor = 0xFF555658.toInt()
-    private val inkOnAmber = 0xFF1A1006.toInt()
-    private val paper = 0xFF0A0B0D.toInt()
-    private val hairline = 0xFF303034.toInt()
+    private val pal by lazy { Pal(context) }
+    private val amber get() = pal.amber
+    private val fgColor get() = pal.ink0
+    private val dimColor get() = pal.ink1
+    private val faintColor get() = pal.faint
+    private val inkOnAmber get() = pal.onAmber
+    private val paper get() = pal.paper
+    private val hairline get() = pal.line
 
     private val swTaps = PrepSwitch(context)
     private val swAwake = PrepSwitch(context)
     private val swNotif = PrepSwitch(context)
+    private val themePicker = LinearLayout(context).apply {
+        orientation = HORIZONTAL
+        listOf(
+            ThemeMode.SYSTEM to R.string.prep_theme_system,
+            ThemeMode.DARK to R.string.prep_theme_dark,
+            ThemeMode.LIGHT to R.string.prep_theme_light,
+        ).forEachIndexed { i, (mode, label) ->
+            addView(
+                themeButton(mode, label),
+                LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT)
+                    .apply { if (i > 0) marginStart = dp(6) },
+            )
+        }
+    }
 
     /** Row key waiting on a system screen: "taps" | "awake" | "notif". */
     private var awaiting: String? = null
@@ -85,6 +100,8 @@ class PrepView(private val act: Activity, private val firstRun: Boolean) : Linea
         list.addView(row("awake", R.string.prep_awake, R.string.prep_awake_sub, swAwake))
         list.addView(divider())
         list.addView(row("notif", R.string.prep_notif, R.string.prep_notif_sub, swNotif))
+        list.addView(divider())
+        list.addView(row("theme", R.string.prep_theme, R.string.prep_theme_sub, themePicker))
         list.addView(divider())
         body.addView(list, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
 
@@ -174,13 +191,17 @@ class PrepView(private val act: Activity, private val firstRun: Boolean) : Linea
             minimumHeight = dp(48)
             setPadding(0, dp(12), 0, dp(12))
             layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
-            if (key != "mirror") {
+            if (key != "mirror" && key != "theme") {
                 // Mirror is informational: MediaProjection cannot be pre-granted,
-                // so there is no system screen to shortcut to.
+                // so there is no system screen to shortcut to. Theme has its own
+                // three-button picker instead of a row-wide tap.
                 val a = context.obtainStyledAttributes(intArrayOf(android.R.attr.selectableItemBackground))
                 background = a.getDrawable(0)
                 a.recycle()
-                setOnClickListener { v -> Haptics.tap(v); open(key) }
+                setOnClickListener { v ->
+                    Haptics.tap(v)
+                    open(key)
+                }
             }
             val txt = LinearLayout(context).apply {
                 orientation = VERTICAL
@@ -208,7 +229,7 @@ class PrepView(private val act: Activity, private val firstRun: Boolean) : Linea
         background = android.graphics.drawable.GradientDrawable().apply {
             cornerRadius = 2f * resources.displayMetrics.density
             setColor(0x00000000)
-            setStroke(dp(1), 0xFF3A3B40.toInt())
+            setStroke(dp(1), pal.lineStrong)
         }
     }
 
@@ -238,6 +259,33 @@ class PrepView(private val act: Activity, private val firstRun: Boolean) : Linea
         render()
     }
 
+    private fun themeButton(mode: String, labelRes: Int) = TextView(context).apply {
+        tag = mode
+        text = getString(labelRes)
+        textSize = 11f
+        typeface = uiBold
+        gravity = Gravity.CENTER
+        setPadding(dp(10), dp(6), dp(10), dp(6))
+        setOnClickListener { v ->
+            Haptics.tap(v)
+            ThemeMode.set(act, mode)
+            render()
+        }
+    }
+
+    private fun paintTheme(selected: String) {
+        for (i in 0 until themePicker.childCount) {
+            val b = themePicker.getChildAt(i) as TextView
+            val on = b.tag == selected
+            b.setTextColor(if (on) inkOnAmber else dimColor)
+            b.background = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = 2f * resources.displayMetrics.density
+                setColor(if (on) amber else 0x00000000)
+                setStroke(dp(1), if (on) amber else pal.lineStrong)
+            }
+        }
+    }
+
     private fun onCta() {
         val st = Prep.state(act)
         val first = offItems(st).firstOrNull()
@@ -249,6 +297,7 @@ class PrepView(private val act: Activity, private val firstRun: Boolean) : Linea
         swTaps.on = st.taps
         swAwake.on = st.awake
         swNotif.on = st.notif
+        paintTheme(ThemeMode.mode(act))
         swTaps.contentDescription = desc(R.string.prep_taps, st.taps)
         swAwake.contentDescription = desc(R.string.prep_awake, st.awake)
         swNotif.contentDescription = desc(R.string.prep_notif, st.notif)
@@ -306,7 +355,8 @@ class PrepView(private val act: Activity, private val firstRun: Boolean) : Linea
         private val rad = 10 * d
         private val knobR = 6 * d
         private val gap = 4 * d
-        private val amber = 0xFFFFB454.toInt()
+        private val pal = Pal(ctx)
+        private val amber get() = pal.amber
 
         private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
         private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -318,11 +368,11 @@ class PrepView(private val act: Activity, private val firstRun: Boolean) : Linea
 
         override fun onDraw(c: Canvas) {
             rect.set(0.5f * d, 0.5f * d, w - 0.5f * d, h - 0.5f * d)
-            fill.color = if (on) 0x17FFB454 else 0x00000000
+            fill.color = if (on) pal.amberWash else 0x00000000
             c.drawRoundRect(rect, rad, rad, fill)
-            stroke.color = if (on) 0x59FFB454 else 0x1FFFFFFF
+            stroke.color = if (on) pal.amberStroke else pal.whiteStroke
             c.drawRoundRect(rect, rad, rad, stroke)
-            ball.color = if (on) amber else 0xFF8B8D90.toInt()
+            ball.color = if (on) amber else pal.ink1
             val cx = if (on) w - gap - knobR else gap + knobR
             c.drawCircle(cx, h / 2f, knobR, ball)
         }

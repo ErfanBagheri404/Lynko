@@ -133,6 +133,9 @@ function useToasts() {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   const push = useCallback((msg: string, kind: Toast["kind"] = "info") => {
+    // Errors live in the dev console only; a toast per failed poll buries the
+    // UI in noise. Action failures still surface in their own inline state.
+    if (kind === "err") return console.error(msg);
     const id = ++toastUid;
     setToasts((t) => [...t.slice(-4), { id, msg, kind }]);
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4000);
@@ -778,7 +781,7 @@ function DevicesView({ devices, link, toast, lang }: ShellProps) {
                 <div key={d.id} className="devrow">
                   <span className={d.id.startsWith("usb:") ? "dev-dot usb" : "dev-dot on"} />
                   <div className="who"><strong>{d.name}</strong><span className={d.id.startsWith("usb:") ? "via" : "addr"} title={d.address}>{d.id.startsWith("usb:") ? T("via_usb") : d.address}</span>
-                    {pairUnavailable === d.id && <span role="status" style={{color: "var(--amber, #ffb454)", maxWidth: 340}}>{T("pair_hint_open")}</span>}
+                    {pairUnavailable === d.id && <span role="status" style={{color: "var(--signal)", maxWidth: 340}}>{T("pair_hint_open")}</span>}
                   </div>
                   <button className="btn sm primary" disabled={checkingPair !== null} onClick={() => pair(d)}>{checkingPair === d.id ? T("checking") : T("pair")}</button>
                 </div>
@@ -1352,70 +1355,109 @@ function FilesView(props: ShellProps) {
     } catch (e) { toast(`Browse failed: ${e}`, "err"); }
   };
 
+  const num = (n: number) => String(n).padStart(2, "0");
+  const online = props.devices.filter((d) => d.online).length;
+  const paired = props.devices.filter((d) => d.paired).length;
+  const queued = files.some((f) => f.status === "queued");
+
   return (
-    <div className="view">
-      <PageHead title={T("files_title")} sub={T("files_sub")} />
-      <p className="desc">{extra(lang,'queueHint')}</p><p className="desc">{extra(lang,'queuePaused')}</p>
-      <div className="card">
-        {link.connected && target ? (
-          <div className="share-target">
-            <span className="share-target-label">{extra(lang, "shareTarget")}</span>
-            <button
-              className="btn sm ghost"
-              onClick={() => props.setView("devices")}
-              title={extra(lang, "sharePickRecipient")}
-            >
-              {target.name}
-            </button>
-            <span className="share-target-state">{extra(lang, "shareConnected")}</span>
-          </div>
-        ) : (
-          <div className="share-target off">
-            <span className="share-target-label">{extra(lang, "shareTarget")}</span>
-            <span className="share-target-none">{extra(lang, "shareTargetNone")}</span>
-            <span className="share-target-hint">{extra(lang, "shareSameWifi")}</span>
-            <button className="btn sm ghost" onClick={() => props.setView("devices")}>
-              {extra(lang, "shareTroubleshoot")}
-            </button>
-          </div>
-        )}
-        <div
-          className={dragOver ? "dropzone over" : "dropzone"}
-          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={onDrop}
-          onClick={browse}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => { if (e.key === "Enter") browse(); }}
-        >
-          <strong>{T("drop_send")}</strong>
-          <span>{T("drop_browse")}</span>
+    <div className="view files-view">
+      <header className="files-masthead">
+        <div className="files-masthead-copy">
+          <span className="files-kicker" aria-hidden="true"><b>03</b></span>
+          <h1>{T("files_title")}</h1>
+          <p>{T("files_sub")}</p>
         </div>
-        {files.length > 0 && (
-          <div className="file-list">
-            {files.map((f) => {
-              const pct = f.size && f.written ? Math.min(100, Math.round((f.written / f.size) * 100)) : null;
-              return (
-                <div className="file-row" key={f.id}>
-                  <IconFiles /><span>{f.name}</span>
-                  <span className="sz">
-                    {f.size ? `${(f.size / 1024).toFixed(0)} KB` : "…"} · {extra(lang,f.status)}
-                    {pct != null && f.status === "sent" && f.written! < (f.size ?? 0) ? ` · ${pct}%` : ""}
-                  </span>
-                  {f.status==='queued' && <button className="btn sm ghost" onClick={()=>props.cancelFile(f.id)}>{extra(lang,'cancel')}</button>}
-                  {['failed','cancelled'].includes(f.status) && <button className="btn sm ghost" onClick={()=>props.retryFile(f.id)}>{extra(lang,'retry')}</button>}
-                  {f.error && <span role="status">{f.error}</span>}
-                  {pct != null && (
-                    <span className="fbar" aria-hidden="true"><i style={{ width: `${pct}%` }} /></span>
-                  )}
-                </div>
-              );
-            })}
+        <div className="files-meters">
+          <span><i className={link.connected ? "on" : ""} />{T("online_count").replace("{n}", String(online))}</span>
+          <span>{T("paired_count").replace("{n}", String(paired))}</span>
+        </div>
+      </header>
+
+      <div className="files-workspace">
+        <section className="files-out" aria-label={T("send")}>
+          <div className="files-bayhead">
+            <h2>{T("send")}</h2>
+            <span className="files-baynum">{num(files.length)}</span>
           </div>
-        )}
+
+          <button
+            type="button"
+            className={link.connected ? "files-route live" : "files-route"}
+            onClick={() => props.setView("devices")}
+            title={extra(lang, "sharePickRecipient")}
+          >
+            <span className="files-route-icon"><IconDevices /></span>
+            <span className="files-route-copy">
+              <small>{extra(lang, "shareTarget")}</small>
+              <strong>{link.connected && target ? target.name : extra(lang, "shareTargetNone")}</strong>
+            </span>
+            {link.connected && (
+              <span className="files-route-state"><i />{extra(lang, "shareConnected")}</span>
+            )}
+          </button>
+
+          {!link.connected && (
+            <div className="files-offline">
+              <p>{extra(lang, "shareSameWifi")}</p>
+              <button className="btn sm ghost" onClick={() => props.setView("devices")}>
+                {extra(lang, "shareTroubleshoot")}
+              </button>
+            </div>
+          )}
+
+          <div
+            className={dragOver ? "dropzone files-drop over" : "dropzone files-drop"}
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={onDrop}
+            onClick={browse}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => { if (e.key === "Enter") browse(); }}
+          >
+            <span className="files-corner tl" aria-hidden="true" />
+            <span className="files-corner tr" aria-hidden="true" />
+            <span className="files-corner bl" aria-hidden="true" />
+            <span className="files-corner br" aria-hidden="true" />
+            <span className="files-drop-mark" aria-hidden="true"><IconFiles /></span>
+            <strong>{T("drop_send")}</strong>
+            <span>{T("drop_browse")}</span>
+          </div>
+
+          <p className="files-footnote">{extra(lang, "queueHint")}</p>
+          {queued && <p className="files-footnote dim">{extra(lang, "queuePaused")}</p>}
+
+          {files.length > 0 && (
+            <div className="files-queue">
+              <div className="files-bayhead">
+                <h2>{T("file_queue")}</h2>
+              </div>
+              {files.map((f, i) => {
+                const pct = f.size && f.written ? Math.min(100, Math.round((f.written / f.size) * 100)) : null;
+                return (
+                  <div className="file-row files-row" key={f.id}>
+                    <span className="files-row-id" aria-hidden="true">{num(i + 1)}</span>
+                    <span className="files-row-name" title={f.name}><IconFiles /><span>{f.name}</span></span>
+                    <span className="files-row-state">{extra(lang, f.status)}</span>
+                    <span className="files-row-size">{f.size ? `${(f.size / 1024).toFixed(0)} KB` : "…"}</span>
+                    {f.status === "queued" && <button className="btn sm ghost" onClick={() => props.cancelFile(f.id)}>{extra(lang, "cancel")}</button>}
+                    {["failed", "cancelled"].includes(f.status) && <button className="btn sm ghost" onClick={() => props.retryFile(f.id)}>{extra(lang, "retry")}</button>}
+                    {f.error && <span className="files-row-err" role="status">{f.error}</span>}
+                    {pct != null && f.status === "sent" && (
+                      <span className="fbar" aria-hidden="true"><i style={{ width: `${pct}%` }} /></span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        <aside className="files-in">
+          <ShareHistory lang={lang} />
+        </aside>
       </div>
-      <ShareHistory lang={lang} />
     </div>
   );
 }
@@ -1578,6 +1620,23 @@ function SettingsView(props: ShellProps) {
                     title={l.label}
                   >
                     {l.autonym}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="set-row">
+            <div className="what"><strong>{extra(lang,'theme')}</strong></div>
+            <div className="ctl">
+              <div className="lang-switch">
+                {(['system','dark','light'] as const).map((th) => (
+                  <button
+                    key={th}
+                    className={props.prefs.theme === th ? "lang-btn on" : "lang-btn"}
+                    aria-pressed={props.prefs.theme === th}
+                    onClick={()=>props.updatePrefs({theme:th})}
+                  >
+                    {extra(lang, th === 'system' ? 'themeSystem' : th === 'dark' ? 'themeDark' : 'themeLight')}
                   </button>
                 ))}
               </div>

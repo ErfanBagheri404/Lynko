@@ -55,16 +55,56 @@
   --signal-wash: rgba(255, 180, 84, 0.09);
   --ok: #4ade80;
   --err: #f87171;
+  --signal-hover: #ffc06e;
+  --hover: #202226;
+  --hover-strong: #1d1f23;
+  --hover-line: rgba(255, 255, 255, 0.22);
+  --rail-hover: rgba(255, 255, 255, 0.03);
+  --scroll: #26272b;
+  --scroll-hover: #333539;
+  color-scheme: dark;
   --radius-card: 2px;
   --radius-ctl: 2px;
   --shadow-card: none;
   --shadow-pop: none;
   --font: "Space Grotesk", sans-serif;
   --font-fa: "Yekan Bakh", "Space Grotesk", sans-serif;
-  --mono: "JetBrains Mono", monospace;
+  --mono: "JetBrains Mono", "Yekan Bakh", monospace;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
 }
+
+/* Light theme: same tokens, paper surfaces. Signal darkens so accent text
+   keeps AA contrast on white; dark ink stays on signal fills. */
+html[data-theme="light"] {
+  --paper: #f2f1ee;
+  --card: #fbfaf8;
+  --card2: #e9e7e2;
+  --line: rgba(0, 0, 0, 0.08);
+  --line-strong: rgba(0, 0, 0, 0.16);
+  --ink0: #17181a;
+  --ink1: #5b5d61;
+  --ink2: #9a9995;
+  --signal: #a8480a;
+  --signal-deep: #7c3600;
+  --signal-ink: #ffffff;
+  --signal-line: rgba(168, 72, 10, 0.4);
+  --signal-wash: rgba(168, 72, 10, 0.08);
+  --signal-hover: #8f3d08;
+  --ok: #15803d;
+  --err: #b91c1c;
+  --hover: #efede8;
+  --hover-strong: #e5e2db;
+  --hover-line: rgba(0, 0, 0, 0.24);
+  --rail-hover: rgba(0, 0, 0, 0.035);
+  --scroll: #cfccc6;
+  --scroll-hover: #b8b5af;
+  color-scheme: light;
+}
+
+/* The mirror canvas stays black in both themes, so its empty-state text keeps
+   the dark-theme muted ink instead of the light one. */
+html[data-theme="light"] .no-signal { color: #9a9a9a; }
 
 * { box-sizing: border-box; }
 
@@ -86,8 +126,8 @@ body {
 ::selection { background: var(--signal); color: var(--signal-ink); }
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-thumb { background: #26272b; border: 0; }
-::-webkit-scrollbar-thumb:hover { background: #333539; }
+::-webkit-scrollbar-thumb { background: var(--scroll); border: 0; }
+::-webkit-scrollbar-thumb:hover { background: var(--scroll-hover); }
 ::-webkit-scrollbar-track { background: transparent; }
 
 input, button, textarea { font-family: inherit; caret-color: var(--signal); }
@@ -276,7 +316,7 @@ html[lang="fa"] .rail {
 
 .rail-item:hover {
   color: var(--ink0);
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--rail-hover);
 }
 
 .rail-item.on {
@@ -400,11 +440,11 @@ html[lang="fa"] .rail {
 }
 
 .btn:hover:not(:disabled) {
-  border-color: rgba(255, 255, 255, 0.22);
-  background: #202226;
+  border-color: var(--hover-line);
+  background: var(--hover);
 }
 
-.btn:active:not(:disabled) { transform: none; background: #1d1f23; }
+.btn:active:not(:disabled) { transform: none; background: var(--hover-strong); }
 
 .btn.primary {
   background: var(--signal);
@@ -412,8 +452,8 @@ html[lang="fa"] .rail {
   color: var(--signal-ink);
 }
 .btn.primary:hover:not(:disabled) {
-  background: #ffc06e;
-  border-color: #ffc06e;
+  background: var(--signal-hover);
+  border-color: var(--signal-hover);
 }
 
 .btn.ghost {
@@ -792,12 +832,12 @@ input.field:focus {
 }
 
 .rail-icon:hover:not(:disabled) {
-  border-color: rgba(255, 255, 255, 0.22);
-  background: #202226;
+  border-color: var(--hover-line);
+  background: var(--hover);
   color: var(--ink0);
 }
 
-.rail-icon:active:not(:disabled) { background: #1d1f23; }
+.rail-icon:active:not(:disabled) { background: var(--hover-strong); }
 
 .rail-icon:disabled {
   opacity: 0.45;
@@ -1054,6 +1094,8 @@ input.field:focus {
   align-items: center;
   justify-content: center;
   gap: 6px;
+  text-align: center;
+  padding: 0 24px;
   color: var(--ink1);
   font-family: var(--mono);
   font-size: 11px;
@@ -1472,6 +1514,8 @@ input.field:focus {
 .onb-sw.on::after { transform: translateX(16px); background: var(--signal); }
 .onb-sw.busy { opacity: 0.5; pointer-events: none; }
 .onb-sw:focus-visible { outline: 1px solid var(--signal); outline-offset: 2px; }
+.onb-sect-theme { margin-top: 30px; }
+.onb-theme .lang-switch { flex: none; }
 .onb-act {
   margin-top: 26px;
   display: flex;

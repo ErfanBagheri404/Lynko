@@ -235,6 +235,12 @@
     "ob_cta_all": "ادامه",
     "ob_cta_n": "روشن کردن {n} مورد",
     "ob_notnow": "الان نه",
+    "ob_appearance": "ظاهر",
+    "ob_theme": "تم",
+    "ob_theme_desc": "به‌طور پیش‌فرض از سیستم پیروی می‌کند؛ برای تغییر یک تم را انتخاب کن.",
+    "ob_theme_system": "سیستم",
+    "ob_theme_dark": "تیره",
+    "ob_theme_light": "روشن",
     "ob_local_only": "فقط شبکه محلی"
   },
   "settings": {
