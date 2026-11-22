@@ -81,19 +81,29 @@ export function IncomingShare({lang}:{lang:Lang}) {
 export function ShareHistory({lang}:{lang:Lang}) {
  const [hist,setHist]=useState<HistoryEntry[]|null>(null);
  const fa=lang==='fa';
+ const dl=fa?'fa-IR':lang==='zh'?'zh-CN':'en-US';
  const T=(k:EnhancementKey)=>text(lang,k);
  const open=async(path:string)=>{try{await invoke('reveal_path',{path});}catch(e){}};
  const loadHist=useCallback(()=>{void invoke<HistoryEntry[]>('history_list').then(setHist).catch(()=>setHist([]));},[]);
  useEffect(()=>{loadHist();const u=listen<{status:string}>('share_status',e=>{if(e.payload.status==='saved')loadHist();});return()=>{void u.then(x=>x());};},[loadHist]);
- return <div className="incoming-history">
-  <div className="incoming-history-head">
+ return <div className="incoming-history files-log">
+  <div className="incoming-history-head files-bayhead">
    <h3>{T('shareHistory')}</h3>
+   <span className="files-baynum">{hist ? String(hist.length).padStart(2,'0') : '--'}</span>
    {!!hist?.length && <button className="btn sm ghost" onClick={()=>{void invoke('history_clear').then(()=>setHist([]));}}>{T('shareDeleteHistory')}</button>}
   </div>
-  {(!hist||hist.length===0)&&<p className="incoming-empty">{T('shareEmptyHistory')}</p>}
+  {(!hist||hist.length===0)&&<div className="files-log-empty">
+   <span className="files-log-zero" aria-hidden="true">000</span>
+   <span className="files-log-rule" aria-hidden="true"/>
+   <p>{T('shareEmptyHistory')}</p>
+   <small>{T('shareSaveHint')}</small>
+  </div>}
   {hist?.map((h,i)=>(<div className="incoming-history-row" key={i}>
-   <span className="incoming-history-name" dir="auto">{h.name}</span>
-   <span className="incoming-history-meta">{fmt(h.size)} · {new Date(h.time*1000).toLocaleString(fa?'fa-IR':'en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span>
+   <span className="files-log-index" aria-hidden="true">{String(i+1).padStart(2,'0')}</span>
+   <span className="files-log-body">
+    <span className="incoming-history-name" dir="auto">{h.name}</span>
+    <span className="incoming-history-meta">{fmt(h.size)} · {new Date(h.time*1000).toLocaleString(dl,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span>
+   </span>
    <button className="btn sm" onClick={()=>void open(h.dir)}>{T('shareOpenFolder')}</button>
   </div>))}
  </div>;

@@ -1,11 +1,9 @@
 name: Release
 
-# Every push to main → rolling "continuous" prerelease.
-# Every tag v* → stable release. Manual dispatch → same as main.
+# Stable releases are published from v* tags only. Manual dispatch builds artifacts.
 
 on:
   push:
-    branches: [main]
     tags: ["v*"]
   workflow_dispatch:
 
@@ -19,7 +17,7 @@ permissions:
 jobs:
   # ────────────────────────────────────────────────────────────────────
   # One version for every platform. A tag v* is authoritative (0.1.2 →
-  # versionName 0.1.2); a main push gets a date-based continuous build
+  # versionName 0.1.2); a manual dispatch gets a date-based build
   # (0.1.20261002) whose versionCode is the date — monotonic, and
   # readable in the filename instead of 0.1.<run_number>.
   # ────────────────────────────────────────────────────────────────────
@@ -29,7 +27,6 @@ jobs:
     outputs:
       version: ${{ steps.ver.outputs.version }}
       code: ${{ steps.ver.outputs.code }}
-      prerelease: ${{ steps.ver.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -40,24 +37,22 @@ jobs:
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             V="${GITHUB_REF_NAME#v}"; V="${V%%-*}"
             CODE=$(echo "$V" | awk -F. '{ printf "%d%03d%03d", $1, $2, $3 }')
-            PRE=false
           else
             # NSIS/MSI cap the patch segment at 65535, so a full date
             # (20261027) is illegal. Day-of-year (yy + DDD = 26301) stays
             # ≤ 99365 and is monotonic across years.
             V="0.1.$(date -u +%y%j)"
             CODE=$(date -u +%Y%m%d)
-            PRE=true
           fi
           echo "version=$V" >> "$GITHUB_OUTPUT"
           echo "code=$CODE" >> "$GITHUB_OUTPUT"
-          echo "prerelease=$PRE" >> "$GITHUB_OUTPUT"
           echo "Lynko $V (code $CODE)"
 
   # ────────────────────────────────────────────────────────────────────
   # Android — universal, arm64-v8a, armeabi-v7a, x86_64
-  # Release-signed when ANDROID_KEYSTORE_BASE64 secret exists,
-  # otherwise debug-signed (still sideloadable).
+  # Signed with the persistent keystore from ANDROID_KEYSTORE_BASE64.
+  # Missing secrets fail the job: a runner-generated debug key would make
+  # every release un-upgradable over the previous install.
   # ────────────────────────────────────────────────────────────────────
   android:
     name: Android
@@ -72,6 +67,22 @@ jobs:
           java-version: "17"
           cache: gradle
 
+      - name: Require release keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          missing=()
+          for name in KEYSTORE_B64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            [ -n "${!name}" ] || missing+=("$name")
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing release signing secret(s): ${missing[*]}. Releases require the persistent keystore; refusing to fall back to a runner debug key."
+            exit 1
+          fi
+
       - name: Build release APKs
         working-directory: android
         env:
@@ -82,13 +93,9 @@ jobs:
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
-          if [ -n "$KEYSTORE_B64" ]; then
-            echo "$KEYSTORE_B64" | base64 --decode > app/release.keystore
-            export KEYSTORE_FILE="$PWD/app/release.keystore"
-            echo "signing with injected release keystore"
-          else
-            echo "no keystore secret — falling back to debug signing"
-          fi
+          echo "$KEYSTORE_B64" | base64 --decode > app/release.keystore
+          export KEYSTORE_FILE="$PWD/app/release.keystore"
+          echo "signing with injected release keystore"
           ./gradlew "assemble${FLAVOR^}Release" \
             -PandroidVersionCode=${{ needs.version.outputs.code }} \
             -PandroidVersionName=${{ needs.version.outputs.version }}
@@ -189,28 +196,43 @@ jobs:
 
   # ────────────────────────────────────────────────────────────────────
   # Linux — deb + rpm + AppImage
+  #
+  # Built inside an Ubuntu 22.04 (jammy) container on purpose: the AppImage
+  # catalog tests on the oldest LTS still in standard support (jammy, glibc
+  # 2.35), so the image must not reference newer glibc symbols. ubuntu-latest
+  # is 26.04 (glibc 2.43) and produced an image that died with
+  # "GLIBC_2.38/2.42/2.43 not found" on the catalog test machine.
+  # ponytail: jammy's webkit2gtk is 2.50 (satisfies wry's >=2.40 API floor);
+  # if wry ever needs a newer API, build in a jammy container with the
+  # toolchain PPA instead of raising the base.
   # ────────────────────────────────────────────────────────────────────
   linux:
     name: Linux — deb/rpm/AppImage
     needs: version
     runs-on: ubuntu-latest
+    container:
+      image: ubuntu:22.04
     steps:
-      - uses: actions/checkout@v4
-
+      # First, because ubuntu:22.04 ships neither git nor curl, and the
+      # checkout / AppRun seed steps need them. No sudo in a container job.
       - name: Install Tauri system deps
         run: |
           for i in 1 2 3; do
-            sudo apt-get update && break
+            apt-get update && break
             echo "apt-get update failed (attempt $i) — retrying in 15s"
             sleep 15
           done
           for i in 1 2 3; do
-            sudo apt-get install -y \
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+              build-essential git curl ca-certificates pkg-config file rpm zstd \
               libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
-              librsvg2-dev patchelf && break
+              librsvg2-dev patchelf squashfs-tools && break
             echo "apt-get install failed (attempt $i) — retrying in 15s"
             sleep 15
           done
+          git config --global --add safe.directory '*'
+
+      - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
@@ -221,6 +243,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: "desktop/src-tauri -> target"
+          # "jammy" keeps this job off the cache the ubuntu-latest runner
+          # filled: that target dir was linked against glibc 2.43 and
+          # cargo would happily reuse it inside the jammy container.
+          key: jammy
 
       - run: npm ci
         working-directory: desktop
@@ -237,6 +263,18 @@ jobs:
           " "$V"
           sed -i "s/^version = \".*\"/version = \"$V\"/" desktop/src-tauri/Cargo.toml
 
+      # tauri-bundler writes the downloaded AppRun launcher with mode 0770, and
+      # linuxdeploy renames that copy to AppRun.wrapped — so a root-mounted run
+      # (firejail, the AppImage catalog) gets "Permission denied". Seeding the
+      # tool cache with 0755 skips the download and keeps the mode correct.
+      # Tracked upstream: tauri-apps/tauri#16155
+      - name: Seed AppImage launcher mode
+        run: |
+          mkdir -p "$HOME/.cache/tauri"
+          curl -fsSL --retry 3 -o "$HOME/.cache/tauri/AppRun-x86_64" \
+            https://github.com/tauri-apps/binary-releases/releases/download/apprun-old/AppRun-x86_64
+          chmod 0755 "$HOME/.cache/tauri/AppRun-x86_64"
+
       - name: Build bundles
         uses: tauri-apps/tauri-action@v0
         env:
@@ -245,6 +283,41 @@ jobs:
           projectPath: desktop
           tauriScript: npx tauri
           args: --bundles deb,rpm,appimage
+
+      # Real modes, from the extracted files: --appimage-extract reports the modes
+      # its own runtime invents (directories 0700), so unpack the squashfs and stat
+      # instead. Symlinks are followed. Either way the launcher has to be
+      # world-readable and executable, or another user cannot start the image.
+      - name: Verify AppImage launcher mode
+        shell: bash
+        run: |
+          images=(desktop/src-tauri/target/release/bundle/appimage/*.AppImage)
+          [ ${#images[@]} -eq 1 ] || {
+            echo "::error::expected one AppImage, found ${#images[@]}: ${images[*]}"; exit 1; }
+          app=${images[0]}
+          # squashfs-tools 4.5 (jammy) refuses an existing -d directory,
+          # so extract into a fresh path under the temp dir.
+          root=$(mktemp -d)
+          dir="$root/appimage"
+          unsquashfs -no-progress -no-xattrs -d "$dir" -o "$("$app" --appimage-offset)" "$app" >/dev/null
+          checked=0
+          for f in AppRun AppRun.wrapped; do
+            { [ -e "$dir/$f" ] || [ -L "$dir/$f" ]; } || continue
+            mode=$(stat -Lc %a "$dir/$f")
+            (( (8#$mode & 5) == 5 )) || {
+              echo "::error::$f is $mode in the AppImage - must be world-readable and executable"; exit 1; }
+            checked=$((checked + 1))
+          done
+          [ "$checked" -gt 0 ] || { echo "::error::no AppRun launcher in the AppImage"; exit 1; }
+          # The AppImage catalog tests on the oldest LTS still in standard
+          # support (jammy, glibc 2.35). Catch a too-new glibc here, not there.
+          highest=$(grep -rhoaE 'GLIBC_2\.[0-9]{1,3}' "$dir" | sed 's/GLIBC_//' | sort -t. -k2 -n | tail -1)
+          [ -n "$highest" ] || { echo "::error::no GLIBC symbols found - the scan is broken"; exit 1; }
+          echo "highest glibc symbol required: $highest"
+          minor=${highest#*.}
+          if [ "$minor" -gt 35 ]; then
+            echo "::error::AppImage requires glibc $highest, jammy provides 2.35"; exit 1
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
@@ -262,6 +335,8 @@ jobs:
   macos:
     name: macOS — dmg (universal)
     needs: version
+    # Optional: a macOS runner shortage must not block the stable release.
+    continue-on-error: true
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -311,12 +386,13 @@ jobs:
 
   # ────────────────────────────────────────────────────────────────────
   # Publish — collect everything into one GitHub Release
-  # main → rolling "continuous" prerelease (replaced each push)
-  # tag  → stable release "Lynko vX.Y.Z"
+  # tag → stable release (main pushes do not publish)
+  # tag → stable release "Lynko vX.Y.Z"
   # ────────────────────────────────────────────────────────────────────
   publish:
     name: Publish release
-    needs: [version, android, windows, linux, macos]
+    # macOS builds separately and may land late; never gate the release on it.
+    needs: [version, android, windows, linux]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -335,42 +411,6 @@ jobs:
               -o -name "*.dmg" \) \
             -exec cp {} flat/ \;
           ls -la flat
-
-      - name: Publish continuous prerelease (main pushes)
-        if: github.ref == 'refs/heads/main'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release delete continuous --yes --cleanup-tag 2>/dev/null || true
-          git config user.name "CI Bot"
-          git config user.email "ci@lynko.app"
-          # GitHub's merge-commit subject is an auto-generated
-          # "Merge pull request #N from …" — useless as a release title.
-          # For merges, the PR title lives in the first line of the body.
-          SUBJ=$(git log -1 --format='%s' "$GITHUB_SHA")
-          case "$SUBJ" in
-            "Merge pull request #"*)
-              SUBJECT=$(git log -1 --format='%b' "$GITHUB_SHA" | head -n1)
-              [ -n "$SUBJECT" ] || SUBJECT="main@$(git rev-parse --short=7 "$GITHUB_SHA")"
-              ;;
-            *) SUBJECT="$SUBJ" ;;
-          esac
-          BODY=$(git log -1 --format='%B' "$GITHUB_SHA")
-          git tag -f -a continuous -m "$SUBJECT" "$GITHUB_SHA"
-          git push origin -f continuous
-          # Per-commit tag so every commit keeps its own build marker.
-          # Named build-* (never v*) so it can't re-trigger this workflow.
-          PER=$(printf 'build-%s-%s' "$(date -u +%Y%m%d)" "$(git rev-parse --short=7 "$GITHUB_SHA")")
-          git tag -a "$PER" -m "$BODY" "$GITHUB_SHA" 2>/dev/null || true
-          git push origin "$PER" 2>/dev/null || true
-          gh release create continuous \
-            --prerelease \
-            --title "Lynko ${{ needs.version.outputs.version }} — $SUBJECT" \
-            --notes "$BODY
-
-          Continuous build from main @ $GITHUB_SHA.
-          APKs are debug-signed until a release keystore is configured." \
-            flat/*
 
       - name: Publish stable release (tags)
         if: startsWith(github.ref, 'refs/tags/v')

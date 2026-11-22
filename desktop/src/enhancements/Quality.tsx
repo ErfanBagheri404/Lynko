@@ -50,26 +50,26 @@ export function QualitySection({ lang }: { lang: Lang }) {
   };
 
   return (
-    <div className="card quality-card">
-      <div className="set-row">
-        <div className="what">
-          <strong>{text(lang, "quality")}</strong>
-          <span>{text(lang, "qualityDesc")}</span>
-        </div>
+    <div className="set-row">
+      <div className="what">
+        <strong>{text(lang, "quality")}</strong>
+        <span>{text(lang, "qualityDesc")}</span>
       </div>
-      <div className="quality-row" role="radiogroup" aria-label={text(lang, "quality")}>
-        {PRESETS.map((p) => (
-          <button
-            key={p.id}
-            role="radio"
-            aria-checked={cur === p.id}
-            className={cur === p.id ? "qbtn on" : "qbtn"}
-            onClick={() => apply(p)}
-            title={`${p.maxWidth}p · q${p.quality}${sent === p.id ? "" : " · …"}`}
-          >
-            {text(lang, (`q_${p.id}` as QualityKey))}
-          </button>
-        ))}
+      <div className="ctl">
+        <div className="quality-row" role="radiogroup" aria-label={text(lang, "quality")}>
+          {PRESETS.map((p) => (
+            <button
+              key={p.id}
+              role="radio"
+              aria-checked={cur === p.id}
+              className={cur === p.id ? "qbtn on" : "qbtn"}
+              onClick={() => apply(p)}
+              title={`${p.maxWidth}p · q${p.quality}${sent === p.id ? "" : " · …"}`}
+            >
+              {text(lang, (`q_${p.id}` as QualityKey))}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );

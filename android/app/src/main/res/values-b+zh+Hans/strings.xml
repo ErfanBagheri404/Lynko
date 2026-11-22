@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Simplified Chinese. Script-qualified (values-b+zh+Hans) so Traditional
+     locales (zh-TW/zh-HK/zh-MO/zh-Hant) keep the default English res strings,
+     matching Loc.kt, which only bundles Simplified. -->
+<resources>
+    <string name="app_name">Lynko</string>
+    <string name="app_tagline">你的手机，投在桌面上</string>
+    <string name="accessibility_service_description">Lynko 使用此无障碍服务接收已配对桌面发来的点击与滑动指令。</string>
+    <string name="nav_home">主页</string>
+    <string name="nav_screen">共享屏幕</string>
+    <string name="interface_animations">界面动画</string>
+    <string name="motion_on">界面动画已开启</string>
+    <string name="motion_off">界面动画已关闭</string>
+
+    <!-- Home-tab section lanes -->
+    <string name="section_signal">信号</string>
+    <string name="requires">所需权限</string>
+    <string name="section_start">启动</string>
+    <string name="start">启动 Lynko</string>
+    <string name="not_running">未运行</string>
+
+    <!-- Screen tab -->
+    <string name="section_screen">屏幕</string>
+    <string name="screen_state_idle">空闲</string>
+    <string name="screen_start">开始投屏</string>
+    <string name="fps_zero">0 帧</string>
+    <string name="prep_title">几件事，一次搞定。</string>
+    <string name="prep_lede">电脑迟早会问你要这些权限。现在设置好，一切就能顺畅运行。</string>
+    <string name="prep_taps">允许电脑操作</string>
+    <string name="prep_taps_sub">仅在连接时响应点按、滑动和按键。</string>
+    <string name="prep_mirror">镜像此屏幕</string>
+    <string name="prep_mirror_sub">每次会话都需要你确认共享。</string>
+    <string name="prep_mirror_chip">每次会话</string>
+    <string name="prep_awake">连接时保持唤醒</string>
+    <string name="prep_awake_sub">防止屏幕休眠导致连接中断。</string>
+    <string name="prep_notif">通知</string>
+    <string name="prep_notif_sub">把电脑的消息显示为真实通知。</string>
+    <string name="prep_waiting">正在等待 Android…</string>
+    <string name="prep_turn_on">开启 %1$d 项</string>
+    <string name="prep_turn_on_1">开启 1 项</string>
+    <string name="prep_continue">继续</string>
+    <string name="prep_note">已开启 %1$d/3 项 · 其余可以稍后再说</string>
+    <string name="prep_entry">准备这台手机</string>
+    <string name="prep_back">返回</string>
+    <string name="prep_theme">主题</string>
+    <string name="prep_theme_sub">跟随系统，或固定浅色/深色。</string>
+    <string name="prep_theme_system">跟随系统</string>
+    <string name="prep_theme_dark">深色</string>
+    <string name="prep_theme_light">浅色</string>
+    <string name="prep_state_on">开</string>
+    <string name="prep_state_off">关</string>
+    <string name="home_hint">同一 Wi-Fi · 需要桌面应用</string>
+    <string name="step_1">在这台手机上打开 Lynko</string>
+    <string name="step_2">输入桌面端显示的 PIN</string>
+    <string name="step_3">从应用镜像、分享和控制</string>
+    <string name="how_it_works">工作原理</string>
+    <string name="update_check">检查更新</string>
+    <string name="update_desc">来自 GitHub Releases 的新版本</string>
+    <string name="update_checking">正在检查…</string>
+    <string name="update_uptodate">已是最新版本</string>
+    <string name="update_available">有可用更新</string>
+    <string name="update_failed">检查失败</string>
+    <string name="update_title">有可用更新</string>
+    <string name="update_whatsnew">更新内容</string>
+    <string name="update_download">下载</string>
+    <string name="update_downloading">正在下载…</string>
+    <string name="update_later">稍后</string>
+    <string name="update_published">发布于</string>
+    <string name="update_allow_sources">Lynko 需要允许从此来源安装应用。开启后再点下载。</string>
+    <string name="update_open_settings">打开设置</string>
+    <string name="update_install_failed">下载失败</string>
+    <string name="update_verify_failed">下载的更新不是由本应用签名的有效 Lynko 版本，因此未安装。</string>
+    <string name="update_download_too_large">更新包过大，Lynko 无法安全下载。</string>
+</resources>

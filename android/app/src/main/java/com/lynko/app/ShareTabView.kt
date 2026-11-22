@@ -60,10 +60,11 @@ class ShareTabView(context: Context) : LinearLayout(context) {
      *  paragraph can't reorder its digits/underscores around. */
     private fun ltr(s: String) = if (Loc.isRtl()) "\u202A$s\u202C" else s
 
-    private val sepColor = 0xFF303034.toInt()
-    private val fgColor = 0xFFE8E6E1.toInt()
-    private val dimColor = 0xFF8B8D90.toInt()
-    private val amber = 0xFFFFB454.toInt()
+    private val pal = Pal(context)
+    private val sepColor get() = pal.line
+    private val fgColor get() = pal.ink0
+    private val dimColor get() = pal.ink1
+    private val amber get() = pal.amber
 
     // --- built views, refilled by render() ---
     private val visualId = TextView(context)
@@ -122,7 +123,7 @@ class ShareTabView(context: Context) : LinearLayout(context) {
             text = label
             typeface = uiBold
             textSize = 14f
-            setTextColor(if (primary) 0xFF1A1006.toInt() else amber)
+            setTextColor(if (primary) pal.onAmber else amber)
             background = ResourcesCompat.getDrawable(
                 resources, if (primary) R.drawable.btn_amber else R.drawable.btn_outline, null
             )
@@ -276,7 +277,7 @@ class ShareTabView(context: Context) : LinearLayout(context) {
             else -> null
         }
         if (stateKey != null)
-            add(targetCard, tv(Loc.t("phone", stateKey), 13f, 0xFF4ADE80.toInt()), bottom = dp(6))
+            add(targetCard, tv(Loc.t("phone", stateKey), 13f, pal.green), bottom = dp(6))
         if (linked) {
             // Favorites (LocalSend ♡): keeps a recurring desktop at the top of
             // the picker. Outline chip, amber only while pinned.

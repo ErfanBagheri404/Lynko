@@ -1,2 +1,2 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources><string name="nav_settings">تنظیمات</string></resources>
+<resources><string name="nav_settings">تنظیمات</string><string name="language">زبان</string><string name="language_hint">فقط روی Lynko اعمال می‌شود.</string><string name="sec_general">عمومی</string><string name="sec_device">دستگاه</string><string name="sec_about">درباره</string></resources>

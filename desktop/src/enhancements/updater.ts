@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useSyncExternalStore } from "react";
 
 export type UpdateInfo = {
   current_version: string;
@@ -7,6 +7,7 @@ export type UpdateInfo = {
   release_notes: string;
   published_at: string;
   html_url: string;
+  download_url: string;
   has_update: boolean;
 };
 
@@ -26,29 +27,38 @@ export const markSeen = (v: string) => localStorage.setItem(SEEN_KEY, v);
 export const autoCheck = () => localStorage.getItem(AUTO_KEY) !== "0";
 export const setAutoCheck = (on: boolean) => localStorage.setItem(AUTO_KEY, on ? "1" : "0");
 
-export function useUpdateCheck(automatic: boolean) {
-  const [info, setInfo] = useState<UpdateInfo | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+/* One shared result per app: the settings row and the update prompt are
+ * mounted in different places and must not each run their own request. */
+type State = { info: UpdateInfo | null; busy: boolean; error: string };
+let state: State = { info: null, busy: false, error: "" };
+const subs = new Set<() => void>();
+const put = (next: State) => { state = next; for (const f of subs) f(); };
+const snapshot = () => state;
+const subscribe = (f: () => void) => { subs.add(f); return () => { subs.delete(f); }; };
 
-  const check = useCallback(async () => {
-    setBusy(true);
-    setError("");
-    try {
-      const r = await invokeFn<UpdateInfo>("check_update");
-      setInfo(r);
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setBusy(false);
-    }
-  }, []);
+export async function checkUpdate() {
+  if (state.busy) return;
+  put({ ...state, busy: true, error: "" });
+  try {
+    const r = await invokeFn<UpdateInfo>("check_update");
+    /* A manual check should resurface the prompt even if this build was
+     * already announced and dismissed: clear the seen marker first. */
+    if (r.has_update) localStorage.removeItem(SEEN_KEY);
+    put({ info: r, busy: false, error: "" });
+  } catch (e) {
+    put({ ...state, busy: false, error: String(e) });
+  }
+}
+
+export function useUpdateCheck(automatic = true) {
+  const s = useSyncExternalStore(subscribe, snapshot);
 
   useEffect(() => {
-    if (!automatic) return;
-    const t = setTimeout(() => { void check(); }, 2500);
+    if (!automatic || !autoCheck()) return;
+    const t = setTimeout(() => { void checkUpdate(); }, 2500);
     return () => clearTimeout(t);
-  }, [automatic, check]);
+  }, [automatic]);
 
-  return { info, busy, error, check };
+  const check = useCallback(() => void checkUpdate(), []);
+  return { info: s.info, busy: s.busy, error: s.error, check };
 }

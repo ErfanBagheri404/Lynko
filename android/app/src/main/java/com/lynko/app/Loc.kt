@@ -10,7 +10,8 @@ import java.util.Locale
  * ship to desktop (TypeScript import) and phone (this assets loader), so a
  * string is edited in exactly one place. Keys mirror the desktop's t() API.
  *
- * Language follows the system locale (fa → Farsi/RTL, anything else → English).
+ * Language follows the system locale (fa → Farsi/RTL, zh → Simplified Chinese,
+ * anything else → English).
  */
 object Loc {
 
@@ -28,7 +29,15 @@ object Loc {
 
     /** Load from assets/locales/<lang>.json. Safe to call every onCreate. */
     fun init(ctx: Context) {
-        lang = if (ctx.resources.configuration.locales[0].language == "fa") "fa" else "en"
+        val sys = ctx.resources.configuration.locales[0]
+        // zh-TW/zh-HK/zh-MO/zh-Hant are Traditional; only Simplified is bundled,
+        // so those fall back to English rather than showing the wrong script.
+        val trad = sys.script == "Hant" || sys.country in setOf("TW", "HK", "MO")
+        lang = when {
+            sys.language == "fa" -> "fa"
+            sys.language == "zh" && !trad -> "zh"
+            else -> "en"
+        }
         fun load(l: String): JSONObject? = try {
             ctx.assets.open("locales/$l.json").bufferedReader().use { JSONObject(it.readText()) }
         } catch (e: Exception) {
@@ -36,7 +45,7 @@ object Loc {
             null
         }
         fallback = fallback ?: load("en")
-        bundle = (if (lang == "en") fallback else load("fa")) ?: fallback
+        bundle = (if (lang == "en") fallback else load(lang)) ?: fallback
     }
 
     /** t("phone", "start") → "Start Lynko" (or Farsi). Falls back to key. */

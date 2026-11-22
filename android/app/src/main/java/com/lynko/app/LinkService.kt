@@ -100,7 +100,7 @@ class LinkService : Service() {
     }
 
     private var pairingServer: PairingServer? = null
-    private var linkServer: LinkServer? = null
+    @Volatile private var linkServer: LinkServer? = null
     private var transferServer: TransferServer? = null
     private var projection: android.media.projection.MediaProjection? = null
     private val screenSession = AtomicReference<ScreenSession?>(null)
@@ -119,6 +119,7 @@ class LinkService : Service() {
     private val lastSendAt = java.util.concurrent.atomic.AtomicLong(0)
     private val sendBusy = java.util.concurrent.atomic.AtomicBoolean(false)
     private var droppedFrames = 0
+    private var bcastCount = 0
 
     // Idle watchdog: if all desktop clients disconnect while mirroring, hold
     // the capture pipeline alive for 60 s so a VPN-toggle / Wi-Fi blip
@@ -224,9 +225,18 @@ class LinkService : Service() {
     }
 
     private fun broadcastBinary(frame: ByteArray) {
-        val server = linkServer ?: return
+        val isJpeg = frame.size > 3 && frame[0] == 'L'.code.toByte()
+        val server = linkServer ?: run {
+            if (isJpeg) Log.w(TAG, "bcast: linkServer NULL inst=${System.identityHashCode(this)}")
+            return
+        }
         val conns = server.connections.toList()
-        if (conns.isEmpty()) return
+        if (conns.isEmpty()) {
+            if (isJpeg) Log.w(TAG, "bcast: conns=0 srv=${System.identityHashCode(server)} inst=${System.identityHashCode(this)}")
+            return
+        }
+        bcastCount++
+        if (bcastCount % 60 == 1 || bcastCount == 1) Log.i(TAG, "bcast n=$bcastCount size=${frame.size} conns=${conns.size} srv=${System.identityHashCode(server)} inst=${System.identityHashCode(this)}")
         val isScreen = frame.size > 3 && frame[0] == 'L'.code.toByte() &&
             frame[1] == 'V'.code.toByte() && frame[2] == '1'.code.toByte()
         // Screen frames: gate on the REAL writer queue depth (Java-WebSocket
@@ -301,15 +311,24 @@ class LinkService : Service() {
         try { PhoneState.onChange?.invoke() } catch (_: Exception) {}
     }
 
-    /** Create all three listener servers. Idempotent — called again on network
-     *  rebinds (VPN toggle, WLAN rejoin) after the old listeners are torn down. */
-    private fun startServers() {
+    /** Create all three listener servers. Optional forceLink = recreate the link
+     *  socket even when the port is already served (used by the VpnGuard rebind,
+     *  where the old sockets are being torn down on purpose). Without it the
+     *  start is idempotent: a second LinkService instance in the same process
+     *  (MIUI task-swipe restart, START_STICKY recreate) must NOT race the
+     *  previous instance's still-bound 7913 — that race is a permanent
+     *  EADDRINUSE storm. The healthy listener serves the desktop; use it. */
+    private fun startServers(forceLink: Boolean = false) {
         startPairAndTransferServers()
+        if (!forceLink && isLinkServed()) {
+            Log.i(TAG, "7913 already served — dropping duplicate link bind")
+            return
+        }
         // Java-WebSocket binds on its own thread; a TIME_WAIT port is fatal
         // there too (isReuseAddr below covers it), so wrap start and retry
         // via scheduleLinkRebind instead of letting the process die.
         try {
-        linkServer = LinkServer(LINK_PORT).also {
+        LinkServer(LINK_PORT).also {
             // Screen+audio bursts can exceed the default 60s idle window on
             // slow links; widen it so the server never drops a live desktop.
             it.connectionLostTimeout = 300
@@ -330,7 +349,6 @@ class LinkService : Service() {
             it.start()
         }
         } catch (e: Exception) {
-            linkServer = null
             Log.e(TAG, "link server failed to bind :$LINK_PORT — retrying", e)
             scheduleLinkRebind()
         }
@@ -489,7 +507,7 @@ class LinkService : Service() {
             // a beat. Bind immediately and SO_REUSEADDR can't help because
             // the old socket is still in the kernel table. Give them 400ms.
             Thread.sleep(400)
-            startServers()
+            startServers(forceLink = true)
             advertise()
         }.start()
     }
@@ -499,6 +517,51 @@ class LinkService : Service() {
      *  (max ~2min total), then give up loudly. Runs off the main thread —
      *  WebSocketServer.stop() can block and must never run there. */
     @Volatile private var linkRebindAttempts = 0
+
+    /** Is 7913 answerable right now? A loopback dial succeeding means SOMEONE
+     *  (our own healthy instance, a healthier predecessor) listens — binding a
+     *  second server is always fatal EADDRINUSE and the desktop dials fine. */
+    private fun isLinkServed(): Boolean {
+        // A socket dial is network I/O: on the main thread it throws
+        // NetworkOnMainThreadException, which this method used to swallow as
+        // "not served". Every onCreate therefore raced a duplicate bind and
+        // the loser took the server field (see onStart). Probe off-thread.
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+            var served = false
+            Thread { served = probeLink() }.apply { start(); join(500) }
+            return served
+        }
+        return probeLink()
+    }
+
+    private fun probeLink(): Boolean {
+        return try {
+            java.net.Socket().use { s ->
+                s.connect(java.net.InetSocketAddress("127.0.0.1", LINK_PORT), 250)
+                true
+            }
+        } catch (e: Exception) {
+            // Swallowing this made the EADDRINUSE storm undebuggable: a probe
+            // that fails while the port is bound is itself the bug.
+            Log.w(TAG, "7913 probe failed: ${e.javaClass.simpleName}: ${e.message}")
+            false
+        }
+    }
+
+    /** Can anyone bind 7913 right now? The dial probe above can fail even while
+     *  a listener owns the port (VPN reroute, MIUI firewall); binding is the
+     *  ground truth. Rebinding a bound port only ever yields EADDRINUSE — and
+     *  the churn tears down the listener that is actually serving desktops. */
+    private fun isLinkPortFree(): Boolean {
+        return try {
+            java.net.ServerSocket().use { s ->
+                s.reuseAddress = true
+                s.bind(java.net.InetSocketAddress(LINK_PORT))
+            }
+            true
+        } catch (_: Exception) { false }
+    }
+
     private fun scheduleLinkRebind() {
         // Budget is generous (30) and resets on any successful dial (onOpen).
         // 8 was too few: a VPN flap or MIUI doze can outlast ~30s of backoff,
@@ -510,8 +573,27 @@ class LinkService : Service() {
         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
             Thread {
                 try {
+                    // Re-examine before binding: the desktop may have dialed the
+                    // surviving listener in the backoff window — then 7913 is
+                    // healthy and a second server is pure EADDRINUSE poison.
+                    if (isLinkServed()) {
+                        linkRebindAttempts = 0
+                        Log.i(TAG, "rebind canceled — 7913 is already served")
+                        return@Thread
+                    }
+                    // Bound but not answerable: rebinding can never succeed, and
+                    // each attempt stops the listener the desktop is using. Give
+                    // up for this process rather than loop EADDRINUSE forever.
+                    // ceiling: a truly dead listener that still holds the port
+                    // needs a process restart (no API to evict it).
+                    if (!isLinkPortFree()) {
+                        linkRebindAttempts = 0
+                        Log.w(TAG, "rebind aborted — 7913 bound but not dialable")
+                        return@Thread
+                    }
                     try { linkServer?.stop() } catch (_: Exception) {}
-                    linkServer = LinkServer(LINK_PORT).also {
+                    linkServer = null
+                    LinkServer(LINK_PORT).also {
                         it.connectionLostTimeout = 300
                         it.isReuseAddr = true
                         it.start()
@@ -690,7 +772,7 @@ class LinkService : Service() {
     /** WS link server: JSON commands in, JSON events + LV1 frames out. */
     inner class LinkServer(port: Int) : WebSocketServer(InetSocketAddress(port)) {
         override fun onOpen(conn: WebSocket, handshake: ClientHandshake) {
-                    Log.i(TAG, "desktop connected: ${handshake.resourceDescriptor}")
+                    Log.i(TAG, "desktop connected: ${handshake.resourceDescriptor} srv=${System.identityHashCode(this)} inst=${System.identityHashCode(this@LinkService)}")
                     // A good dial means 7913 is healthy again: clear the rebind budget
                     // so one bad spell (VPN flap, doze) can't latch the listener dead
                     // for the rest of the process life ("7913 stays down" black mirror).
@@ -766,6 +848,12 @@ class LinkService : Service() {
         }
         override fun onStart() {
             Log.i(TAG, "link server started on $port")
+            // Publish the field ONLY from a server that actually owns 7913.
+            // start() binds on the WS thread, so assigning the field before
+            // the bind resolved handed it to the loser of an EADDRINUSE race:
+            // the desktop stayed connected to the winner while every frame
+            // went to the loser (bcast conns=0 -> black mirror, taps fine).
+            linkServer = this
             linkRebindAttempts = 0
         }
     }
@@ -1017,6 +1105,7 @@ class LinkService : Service() {
     }
 
     private fun startScreenCapture(conn: WebSocket) {
+        Log.i(TAG, "startScreenCapture inst=${System.identityHashCode(this)} server=${System.identityHashCode(linkServer)}")
         if (screenSession.get() != null) return
         // Requires MediaProjection consent — captured via MainActivity flow.
         val proj = obtainProjection(create = true)
@@ -1154,6 +1243,7 @@ class LinkService : Service() {
      * desktop WS (if linked) and the phone preview sink.
      */
     fun startLocalMirror() {
+        Log.i(TAG, "startLocalMirror inst=${System.identityHashCode(this)} server=${System.identityHashCode(linkServer)}")
         if (screenSession.get() != null) return
         val proj = obtainProjection(create = true)
         if (proj == null) {

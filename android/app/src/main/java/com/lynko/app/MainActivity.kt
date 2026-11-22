@@ -17,6 +17,8 @@ import android.widget.Button
 import android.widget.ScrollView
 import android.widget.FrameLayout
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.os.LocaleListCompat
 import androidx.core.app.ActivityCompat
 
 /**
@@ -58,23 +60,17 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusSub: TextView
     private lateinit var startBtn: Button
     private lateinit var pinText: TextView
-    private lateinit var permScreen: LinearLayout
-    private lateinit var permScreenIcon: TextView
-    private lateinit var permScreenText: TextView
-    private lateinit var permA11y: LinearLayout
-    private lateinit var permA11yIcon: TextView
-    private lateinit var permA11yText: TextView
-    private lateinit var permBattery: LinearLayout
-    private lateinit var permBatteryIcon: TextView
-    private lateinit var permBatteryText: TextView
-    private lateinit var permNotif: LinearLayout
-    private lateinit var permNotifIcon: TextView
-    private lateinit var permNotifText: TextView
+    private lateinit var permPrepare: LinearLayout
 
     private var sharedUris: List<android.net.Uri>? = null
     private var pendingMirror = false
     private var currentTab = 0  // 0=home, 1=screen
     private var feedback: com.google.android.material.snackbar.Snackbar? = null
+
+    // --- first-run prep screen ("Four things, once.") ---
+    private val pal by lazy { Pal(this) }
+    private var prepView: PrepView? = null
+    private var prepActive = false
 
     private fun showFeedback(message: String) {
         feedback?.dismiss()
@@ -82,12 +78,12 @@ class MainActivity : AppCompatActivity() {
             findViewById(android.R.id.content), message,
             com.google.android.material.snackbar.Snackbar.LENGTH_LONG
         ).setAnchorView(findViewById<View>(R.id.bottomNav))
-            .setBackgroundTint(0xFF1A1B1E.toInt())
-            .setTextColor(0xFFE8E6E1.toInt())
+            .setBackgroundTint(pal.panel)
+            .setTextColor(pal.ink0)
         bar.view.elevation = 0f
         bar.view.background = android.graphics.drawable.GradientDrawable().apply {
-            setColor(0xFF1A1B1E.toInt())
-            setStroke(resources.displayMetrics.density.toInt().coerceAtLeast(1), 0xFF555658.toInt())
+            setColor(pal.panel)
+            setStroke(resources.displayMetrics.density.toInt().coerceAtLeast(1), pal.faint)
             cornerRadius = 0f
         }
         bar.view.findViewById<TextView>(com.google.android.material.R.id.snackbar_text).maxLines = 4
@@ -96,22 +92,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        ThemeMode.apply(this)
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         Loc.init(this)
 
-        // Request battery optimization exemption on first launch — without
-        // this, MIUI kills the foreground service when VPN toggles.
-        if (Build.VERSION.SDK_INT >= 23) {
-            val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
-            if (!pm.isIgnoringBatteryOptimizations(packageName)) {
-                try {
-                    startActivity(android.content.Intent(
-                        android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                        android.net.Uri.parse("package:$packageName")))
-                } catch (_: Exception) { }
-            }
-        }
+        // Battery-optimization exemption is not requested here: the prep screen
+        // owns that gate (one row, one dialog). Asking twice = two prompts.
 
         settingsContainer = findViewById(R.id.settingsContainer)
         navSettings = findViewById(R.id.navSettings)
@@ -133,19 +120,6 @@ class MainActivity : AppCompatActivity() {
         startBtn = findViewById(R.id.startBtn)
         pinText = findViewById(R.id.pinText)
         DevPermHeal.heal(this)
-
-        permScreen = findViewById(R.id.permScreen)
-        permScreenIcon = findViewById(R.id.permScreenIcon)
-        permScreenText = findViewById(R.id.permScreenText)
-        permA11y = findViewById(R.id.permA11y)
-        permA11yIcon = findViewById(R.id.permA11yIcon)
-        permA11yText = findViewById(R.id.permA11yText)
-        permBattery = findViewById(R.id.permBattery)
-        permBatteryIcon = findViewById(R.id.permBatteryIcon)
-        permBatteryText = findViewById(R.id.permBatteryText)
-        permNotif = findViewById(R.id.permNotif)
-        permNotifIcon = findViewById(R.id.permNotifIcon)
-        permNotifText = findViewById(R.id.permNotifText)
 
         // Share tab lives in the same container the old Screen tab used.
         screenTab = ShareTabView(this)
@@ -196,20 +170,32 @@ class MainActivity : AppCompatActivity() {
             }
         }
         renderState()
-        renderPerms()
-        findViewById<Button>(R.id.audioPermission).setOnClickListener {
+        findViewById<TextView>(R.id.settingsVersion).text =
+            "LYNKO  " + (packageManager.getPackageInfo(packageName, 0).versionName ?: "")
+        findViewById<View>(R.id.audioPermission).setOnClickListener {
             if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
                 showFeedback(getString(R.string.audio_permission_granted))
             } else ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), 102)
         }
-        findViewById<Button>(R.id.privacyPolicy).setOnClickListener {
+        findViewById<View>(R.id.updateRow).setOnClickListener { v ->
+            Haptics.tap(v)
+            checkUpdates(manual = true)
+        }
+        Update.onChange = { runOnUiThread { renderUpdateRow() } }
+        renderUpdateRow()
+        // Launch check stays silent unless GitHub has a version this build has
+        // not already shown: an update row is enough for the rest. A check that
+        // finished before a recreation replays from Update instead of refetching.
+        if (Update.checked && !Update.failed) promptUpdate(Update.latest)
+        else Update.check(this) { r -> promptUpdate(r) }
+        findViewById<View>(R.id.privacyPolicy).setOnClickListener {
             // setMessage() does not scroll: the long policy got silently cut
             // off mid-sentence, and Myket requires the privacy text to be
             // readable in-app. Use a scrollable body instead.
             val pad = (20 * resources.displayMetrics.density).toInt()
             val body = TextView(this).apply {
                 text = getString(R.string.privacy_policy_body)
-                setTextColor(0xFFE8E6E1.toInt())
+                setTextColor(pal.ink0)
                 textSize = 14f
                 setLineSpacing(0f, 1.15f)
                 setPadding(pad, pad / 2, pad, pad / 2)
@@ -220,6 +206,28 @@ class MainActivity : AppCompatActivity() {
                 .setView(scroller)
                 .setPositiveButton(android.R.string.ok, null)
                 .show()
+        }
+        val langButtons = mapOf(
+            "en" to findViewById<TextView>(R.id.langEn),
+            "fa" to findViewById<TextView>(R.id.langFa),
+            "zh-Hans" to findViewById<TextView>(R.id.langZh),
+        )
+        // No stored override means follow the phone; AppCompat keeps the choice.
+        val activeTag = AppCompatDelegate.getApplicationLocales().toLanguageTags()
+            .ifEmpty { resources.configuration.locales[0].toLanguageTag() }
+        val activeLang = when {
+            activeTag.startsWith("fa") -> "fa"
+            activeTag.startsWith("zh") -> "zh-Hans"
+            else -> "en"
+        }
+        langButtons.forEach { (tag, btn) ->
+            btn.setTextColor(if (tag == activeLang) pal.amber else pal.ink1)
+            btn.setOnClickListener {
+                Haptics.tap(it)
+                if (tag != activeLang) {
+                    AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(tag))
+                }
+            }
         }
         val motionToggle = findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.motionToggle)
         motionToggle.isChecked = getPreferences(Context.MODE_PRIVATE).getBoolean("motion", true)
@@ -248,17 +256,48 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Each checklist row is a shortcut to the exact system screen needed.
-        permScreen.setOnClickListener { v ->
-            Haptics.tap(v)
-            if (!ScreenPermission.isGranted) ScreenPermission.request(this)
+        permPrepare = findViewById(R.id.permPrepare)
+        permPrepare.setOnClickListener { v -> Haptics.tap(v); showPrep(fromSettings = true) }
+
+        // First run: the prep screen replaces the tabs until "Continue".
+        // Re-show it after a theme change recreates the activity mid-prep.
+        if (!getPreferences(Context.MODE_PRIVATE).getBoolean("lynko_prep_done", false)) {
+            showPrep(fromSettings = false)
+        } else if (savedInstanceState?.getBoolean("prep_open") == true) {
+            showPrep(fromSettings = true)
         }
-        permA11y.setOnClickListener { v -> Haptics.tap(v); openAccessibilitySettings() }
-        permBattery.setOnClickListener { v -> Haptics.tap(v); openBatterySettings() }
-        permNotif.setOnClickListener { v ->
-            Haptics.tap(v)
-            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+    }
+
+    /** Overlay the "Four things, once." screen on appRoot (covers the nav). */
+    private fun showPrep(fromSettings: Boolean) {
+        if (prepActive) return
+        prepActive = true
+        val v = PrepView(this, !fromSettings)
+        prepView = v
+        v.onContinue = {
+            getPreferences(Context.MODE_PRIVATE).edit().putBoolean("lynko_prep_done", true).apply()
+            dismissPrep(if (fromSettings) 2 else currentTab)
         }
+        v.onBack = { dismissPrep(2) }
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(v) { view, insets ->
+            val bars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            insets
+        }
+        findViewById<android.view.ViewGroup>(android.R.id.content).addView(
+            v, android.view.ViewGroup.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+            ),
+        )
+    }
+
+    private fun dismissPrep(tab: Int) {
+        prepActive = false
+        prepView?.let { findViewById<android.view.ViewGroup>(android.R.id.content).removeView(it) }
+        prepView = null
+        switchTab(tab, false)
+        renderState()
     }
 
     private fun switchTab(tab: Int, animate: Boolean = true) {
@@ -274,8 +313,8 @@ class MainActivity : AppCompatActivity() {
             val active = i == selected
             page.visibility = if (active) View.VISIBLE else View.GONE
             navs[i].isSelected = active
-            icons[i].setColorFilter(if (active) 0xFFFFB454.toInt() else 0xFF8B8D90.toInt())
-            labels[i].setTextColor(if (active) 0xFFFFB454.toInt() else 0xFF8B8D90.toInt())
+            icons[i].setColorFilter(if (active) pal.amber else pal.ink1)
+            labels[i].setTextColor(if (active) pal.amber else pal.ink1)
             labels[i].paint.isFakeBoldText = active
         }
         if (changed && animate && motionEnabled()) {
@@ -301,6 +340,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putInt("tab", currentTab)
+        outState.putBoolean("prep_open", prepActive)
         super.onSaveInstanceState(outState)
     }
 
@@ -313,7 +353,6 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         ShareSender.onChange = { screenTab.render() }
-        LynkoAccessibilityService.onChange = { renderPerms() }
         screenTab.render()
         readShareIntent()
         if (intent.getBooleanExtra("request_mirror_consent", false)) {
@@ -321,6 +360,7 @@ class MainActivity : AppCompatActivity() {
             pendingMirror = true
             ScreenPermission.request(this)
         }
+        prepView?.onScreenResume()
         switchTab(currentTab, false)
         renderState()
         screenTab.render()
@@ -420,49 +460,8 @@ class MainActivity : AppCompatActivity() {
                 pinText.visibility = View.GONE
             }
         }
-        renderPerms()
     }
 
-    /** Checklist rows flip from • (todo) to ✓ (granted) as the user grants them. */
-    private fun renderPerms() {
-        // Check the PERMISSION (Settings string), not the live binding: MIUI
-        // unbinds the service on backgrounding, so instance==null on every
-        // relaunch while the grant is still intact — checking instance told
-        // every user to toggle the service off→on on each app open. The
-        // checklist re-renders via LynkoAccessibilityService.onChange when the
-        // system actually (re)binds.
-        val a11yOk = LynkoAccessibilityService.enabled(this)
-        val notifOk = if (Build.VERSION.SDK_INT >= 24) {
-            androidx.core.app.NotificationManagerCompat.getEnabledListenerPackages(this)
-                .contains(packageName)
-        } else true
-
-        fun bind(row: LinearLayout, icon: TextView, text: TextView, ok: Boolean, label: String) {
-            // Jackfield world: lanes never change their plate. State is drawn
-            // on the lane's own mark — • pending (amber), ╬ granted (muted,
-            // struck). No background swap, no rounding.
-            row.setBackgroundResource(0)
-            // Granted rows keep FULL alpha: 0.55 over #8B8D90 composites to
-            // ~2.6:1 and the strike-through line was the only thing reading as
-            // "done". Contrast must stay AA (5.9:1); state is carried by the
-            // mark (•/✓) and the strike, not by fading the text out.
-            row.alpha = 1f
-            icon.text = if (ok) "✓" else "•"
-            icon.setTextColor(if (ok) 0xFF8B8D90.toInt() else 0xFFFFB454.toInt())
-            text.paint.isStrikeThruText = ok
-            text.setTextColor(if (ok) 0xFF8B8D90.toInt() else 0xFFE8E6E1.toInt())
-            text.text = label
-        }
-        bind(permScreen, permScreenIcon, permScreenText, ScreenPermission.isGranted, Loc.t("phone", "perm_screen"))
-        bind(permA11y, permA11yIcon, permA11yText, a11yOk, Loc.t("phone", "perm_a11y"))
-        // MIUI kills the process at lock-screen unless battery optimizations
-        // are ignored — and that kill is what resets the a11y grant.
-        val battOk = if (Build.VERSION.SDK_INT >= 23)
-            (getSystemService(Context.POWER_SERVICE) as android.os.PowerManager)
-                .isIgnoringBatteryOptimizations(packageName) else true
-        bind(permBattery, permBatteryIcon, permBatteryText, battOk, Loc.t("phone", "perm_battery"))
-        bind(permNotif, permNotifIcon, permNotifText, notifOk, Loc.t("phone", "perm_notif"))
-    }
 
     /** Deep-link to MIUI's battery saver screen for this app. */
     private fun openBatterySettings() {
@@ -499,6 +498,119 @@ class MainActivity : AppCompatActivity() {
         if (!PhoneState.link) { showFeedback(Loc.t("phone", "share_connect")); return }
         val uris = tab.stagedUris
         chooseSharePeer(uris, tab)
+    }
+
+    /** Settings row: same wording as the desktop card. */
+    private fun renderUpdateRow() {
+        val sub = findViewById<TextView>(R.id.updateSub)
+        val cur = Update.current(this)
+        sub.text = when {
+            Update.busy -> getString(R.string.update_checking)
+            Update.failed -> getString(R.string.update_failed)
+            Update.latest != null -> getString(R.string.update_available) + "  ·  v" + Update.latest!!.version
+            Update.checked -> getString(R.string.update_uptodate) + "  ·  v" + cur
+            else -> getString(R.string.update_desc)
+        }
+    }
+
+    private fun checkUpdates(manual: Boolean) {
+        if (Update.busy) return
+        Update.check(this) { r ->
+            if (r != null) {
+                showUpdateDialog(r)
+            } else if (manual) {
+                showFeedback(getString(if (Update.failed) R.string.update_failed else R.string.update_uptodate))
+            }
+        }
+    }
+
+    private fun seen(v: String) {
+        getPreferences(Context.MODE_PRIVATE).edit().putString("lynko_seen_version", v).apply()
+    }
+
+    /** A failed download must not be remembered as "already seen". */
+    private fun clearSeen() {
+        getPreferences(Context.MODE_PRIVATE).edit().putString("lynko_seen_version", "").apply()
+    }
+
+    private fun promptUpdate(r: Update.Release?) {
+        val seen = getPreferences(Context.MODE_PRIVATE).getString("lynko_seen_version", "")
+        if (r != null && r.version != seen) showUpdateDialog(r)
+    }
+
+    private fun showUpdateDialog(r: Update.Release) {
+        val pad = (20 * resources.displayMetrics.density).toInt()
+        val body = TextView(this).apply {
+            text = r.notes.replace("**", "").replace("`", "").ifBlank {
+                if (r.published.isNotEmpty()) getString(R.string.update_published) + " " + r.published else ""
+            }
+            setTextColor(pal.ink0)
+            textSize = 13.5f
+            setLineSpacing(0f, 1.2f)
+            setPadding(pad, pad / 2, pad, pad / 2)
+            android.text.util.Linkify.addLinks(this, android.text.util.Linkify.WEB_URLS)
+            movementMethod = android.text.method.LinkMovementMethod.getInstance()
+            setLinkTextColor(pal.amber)
+        }
+        val head = TextView(this).apply {
+            text = getString(R.string.update_whatsnew).uppercase()
+            setTextColor(pal.ink2)
+            textSize = 10f
+            letterSpacing = 0.2f
+            typeface = android.graphics.Typeface.MONOSPACE
+            setPadding(pad, pad, pad, 0)
+        }
+        val status = TextView(this).apply {
+            visibility = View.GONE
+            setTextColor(pal.ink1)
+            textSize = 12f
+            setPadding(pad, 0, pad, pad / 2)
+        }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(head)
+            addView(ScrollView(this@MainActivity).apply { addView(body) })
+            addView(status)
+        }
+        // Keep the dialog open across the download so the user sees progress and
+        // a failure instead of a silent no-op after the button dismisses it.
+        val dialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(this, R.style.Theme_Lynko_Dialog)
+            .setTitle(getString(R.string.update_available) + "  ·  v" + r.version)
+            .setView(box)
+            .setPositiveButton(R.string.update_download, null)
+            .setNegativeButton(R.string.update_later) { _, _ -> seen(r.version) }
+            .setOnCancelListener { seen(r.version) }
+            .create()
+        dialog.show()
+        dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).setOnClickListener {
+            seen(r.version)
+            if (r.apk.isEmpty()) {
+                dialog.dismiss()
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(r.page)))
+                return@setOnClickListener
+            }
+            if (!Update.download(
+                    this, r,
+                    progress = { pct ->
+                        status.visibility = View.VISIBLE
+                        status.text = getString(R.string.update_downloading) + " $pct%"
+                    },
+                    fail = { e ->
+                        clearSeen()
+                        dialog.dismiss()
+                        com.google.android.material.dialog.MaterialAlertDialogBuilder(this, R.style.Theme_Lynko_Dialog)
+                            .setTitle(R.string.update_install_failed)
+                            .setMessage(e)
+                            .setPositiveButton(android.R.string.ok, null)
+                            .show()
+                    },
+                )) {
+                showFeedback(getString(R.string.update_downloading))
+                return@setOnClickListener
+            }
+            status.visibility = View.VISIBLE
+            status.text = getString(R.string.update_downloading)
+        }
     }
 
     /** Text picker dialog — the typed text lands as a cache .txt file. */

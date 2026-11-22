@@ -1,8 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <style name="Theme.Lynko" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="android:statusBarColor">#0A0B0D</item>
-        <item name="android:navigationBarColor">#0A0B0D</item>
-        <item name="android:windowBackground">#0A0B0D</item>
+        <item name="android:statusBarColor">@color/paper</item>
+        <item name="android:navigationBarColor">@color/paper</item>
+        <item name="android:windowLightStatusBar">@bool/light_system_bars</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="27">@bool/light_system_bars</item>
+        <item name="android:windowBackground">@color/paper</item>
+        <item name="colorPrimary">@color/amber</item>
+        <item name="colorOnPrimary">@color/on_amber</item>
+        <item name="colorSecondary">@color/amber</item>
+        <item name="android:colorAccent">@color/amber</item>
+        <item name="colorControlActivated">@color/amber</item>
+        <item name="colorControlNormal">@color/control_normal</item>
+        <item name="android:textColorPrimary">@color/ink0</item>
+        <item name="android:textColorSecondary">@color/ink1</item>
+    </style>
+    <style name="Theme.Lynko.Dialog" parent="Theme.Material3.DayNight.Dialog.Alert">
+        <item name="colorPrimary">@color/amber</item>
+        <item name="colorAccent">@color/amber</item>
+        <item name="android:colorAccent">@color/amber</item>
+        <item name="colorSurface">@color/card</item>
+        <item name="android:background">@color/card</item>
+        <item name="android:textColorPrimary">@color/ink0</item>
+        <item name="android:textColorSecondary">@color/ink1</item>
     </style>
 </resources>

@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod adb;
+mod preflight;
 mod share_receive;
 mod transfer_receive;
 
@@ -573,7 +574,14 @@ async fn run_link(
                     }
                 }
             }
-            Ok(Some(Ok(Message::Close(_)))) | Ok(None) | Err(_) => break,
+            // Idle for 30s is NOT death: with screen streaming off (or the user
+            // just not typing) the phone sends nothing, and tearing the link
+            // down here made desktop reconnect every 30s forever. Ping instead —
+            // a dead TCP shows up as a failed send, a live one answers pong.
+            Err(_) => {
+                let _ = _tx.send(Message::Ping(Vec::new().into())).await;
+            }
+            Ok(Some(Ok(Message::Close(_)))) | Ok(None) => break,
             _ => {}
         }
     }
@@ -1120,6 +1128,32 @@ pub struct UpdateInfo {
     pub published_at: String,
     pub html_url: String,
     pub has_update: bool,
+    /// Installer asset this build can fetch itself; empty when the release
+    /// ships nothing runnable on this platform (the UI falls back to the page).
+    pub download_url: String,
+}
+
+/// The installer to hand to `download_update`, for the platform we're on.
+fn installer_asset(r: &serde_json::Value) -> String {
+    let want: &[&str] = if cfg!(windows) {
+        &["x64-setup.exe", ".msi"]
+    } else if cfg!(target_os = "macos") {
+        &[".dmg"]
+    } else {
+        &[".AppImage", ".deb"]
+    };
+    let empty = Vec::new();
+    let assets = r.get("assets").and_then(|v| v.as_array()).unwrap_or(&empty);
+    for suffix in want {
+        if let Some(u) = assets
+            .iter()
+            .filter_map(|a| a.get("browser_download_url").and_then(|v| v.as_str()))
+            .find(|u| u.ends_with(suffix))
+        {
+            return u.to_string();
+        }
+    }
+    String::new()
 }
 
 /// Query the latest GitHub Release for Lynko. Fallback to /releases (taking the
@@ -1143,26 +1177,24 @@ async fn check_update() -> Result<UpdateInfo, String> {
         .build()
         .map_err(|e| e.to_string())?;
 
-    // Try /releases/latest first; if 404, fallback to /releases
-    let url_latest = "https://api.github.com/repos/ErfanBagheri404/Lynko/releases/latest";
-    let resp = client.get(url_latest).send().await;
-    let json_val: serde_json::Value = match resp {
-        Ok(r) if r.status().is_success() => r.json().await.map_err(|e| e.to_string())?,
-        _ => {
-            // fallback: first entry of /releases
-            let url_all = "https://api.github.com/repos/ErfanBagheri404/Lynko/releases?per_page=1";
-            let r2 = client
-                .get(url_all)
-                .send()
-                .await
-                .map_err(|e| format!("Network error: {e}"))?;
-            if !r2.status().is_success() {
-                return Err(format!("GitHub API returned {}", r2.status()));
-            }
-            let arr: Vec<serde_json::Value> = r2.json().await.map_err(|e| e.to_string())?;
-            arr.into_iter().next().ok_or_else(|| "No releases found".to_string())?
-        }
-    };
+    // One deterministic source: the newest published semver release. `/latest`
+    // and the list endpoint disagree (rate limits, the `continuous` tag), which
+    // made the modal flip between a detailed body and a bare changelog link.
+    let url = "https://api.github.com/repos/ErfanBagheri404/Lynko/releases?per_page=30";
+    let resp = client.get(url).send().await.map_err(|e| format!("Network error: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("GitHub API returned {}", resp.status()));
+    }
+    let list: Vec<serde_json::Value> = resp.json().await.map_err(|e| e.to_string())?;
+    let json_val = list
+        .into_iter()
+        .filter(|r| {
+            r.get("draft").and_then(|v| v.as_bool()) != Some(true)
+                && r.get("prerelease").and_then(|v| v.as_bool()) != Some(true)
+                && parse_semver(tag_of(r)).is_some()
+        })
+        .max_by_key(|r| parse_semver(tag_of(r)))
+        .ok_or_else(|| "No releases found".to_string())?;
 
     let tag = json_val
         .get("tag_name")
@@ -1197,6 +1229,8 @@ async fn check_update() -> Result<UpdateInfo, String> {
     // Semver check: parse major.minor.patch. Fallback: string inequality.
     let has_update = is_newer(&cur, &clean_tag);
 
+    let download_url = installer_asset(&json_val);
+
     let info = UpdateInfo {
         current_version: cur,
         latest_version: clean_tag,
@@ -1205,9 +1239,14 @@ async fn check_update() -> Result<UpdateInfo, String> {
         published_at,
         html_url,
         has_update,
+        download_url,
     };
     *lock = Some((std::time::Instant::now(), info.clone()));
     Ok(info)
+}
+
+fn tag_of(r: &serde_json::Value) -> &str {
+    r.get("tag_name").and_then(|v| v.as_str()).unwrap_or("").trim_start_matches('v')
 }
 
 fn parse_semver(s: &str) -> Option<(u32, u32, u32)> {
@@ -1272,6 +1311,112 @@ fn reveal_path(path: String) -> Result<(), String> {
             .spawn()
             .map_err(|e| e.to_string())?;
     }
+    Ok(())
+}
+
+/// Open an external release page in the default browser. Tauri's WebView
+/// swallows window.open because no on_new_window handler is registered.
+#[tauri::command]
+fn open_external(url: String) -> Result<(), String> {
+    if !url.starts_with("https://github.com/ErfanBagheri404/Lynko") {
+        return Err("blocked URL".into());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", &url])
+            .creation_flags(0x08000000)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Fetch the release installer to a temp file, emitting `update_progress`
+/// ({downloaded,total} bytes) as it streams. Returns the local path; the UI
+/// then calls `run_update` so it can show "installing" first.
+#[tauri::command]
+async fn download_update(app: tauri::AppHandle, url: String) -> Result<String, String> {
+    const PREFIX: &str = "https://github.com/ErfanBagheri404/Lynko/releases/download/";
+    if !url.starts_with(PREFIX) {
+        return Err("blocked URL".into());
+    }
+    let name = url.rsplit('/').next().filter(|n| !n.is_empty()).ok_or("bad URL")?;
+    let dir = std::env::temp_dir().join("lynko-update");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join(name);
+
+    let client = reqwest::Client::builder()
+        .user_agent("Lynko-Desktop (https://github.com/ErfanBagheri404/Lynko)")
+        .timeout(std::time::Duration::from_secs(1800))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let resp = client.get(&url).send().await.map_err(|e| format!("Network error: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("Download failed: HTTP {}", resp.status()));
+    }
+    let total = resp.content_length().unwrap_or(0);
+    let mut file = std::fs::File::create(&path).map_err(|e| e.to_string())?;
+    let mut got: u64 = 0;
+    let mut last = std::time::Instant::now();
+    let mut stream = resp.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| format!("Download interrupted: {e}"))?;
+        std::io::Write::write_all(&mut file, &chunk).map_err(|e| e.to_string())?;
+        got += chunk.len() as u64;
+        if last.elapsed().as_millis() >= 150 {
+            let _ = app.emit("update_progress", serde_json::json!({ "downloaded": got, "total": total }));
+            last = std::time::Instant::now();
+        }
+    }
+    let _ = app.emit("update_progress", serde_json::json!({ "downloaded": got, "total": total }));
+    Ok(path.to_string_lossy().to_string())
+}
+
+/// Hand the downloaded installer to the OS and quit, so the installer can
+/// replace our own binaries. The wizard stays visible on purpose: a silent
+/// install would need elevation-proof NSIS flags we can't verify from here.
+#[tauri::command]
+fn run_update(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    if !std::path::Path::new(&path).is_file() {
+        return Err("installer missing".into());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", &path])
+            .creation_flags(0x08000000)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open").arg(&path).spawn().map_err(|e| e.to_string())?;
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        std::process::Command::new("xdg-open").arg(&path).spawn().map_err(|e| e.to_string())?;
+    }
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(800));
+        app.exit(0);
+    });
     Ok(())
 }
 
@@ -1648,10 +1793,16 @@ fn main() {
             get_pc_clipboard,
             toggle_hotkeys,
             check_update,
+            open_external,
+            download_update,
+            run_update,
             set_dnd,
             request_app_list,
             launch_app,
-            capture_screenshot
+            capture_screenshot,
+            preflight::preflight_state,
+            preflight::set_firewall,
+            preflight::set_autostart
         ])
         .run(tauri::generate_context!())
         .expect("error while running Lynko");
@@ -1660,6 +1811,27 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Releases carry portable zips and Android APKs too; the in-app updater
+    /// must pick the runnable installer, never the first asset it sees.
+    #[test]
+    fn installer_asset_picks_the_native_installer() {
+        let rel = serde_json::json!({ "assets": [
+            { "browser_download_url": "https://x/Lynko-0.2.4-windows-x64-portable.zip" },
+            { "browser_download_url": "https://x/Lynko_0.2.4_amd64.deb" },
+            { "browser_download_url": "https://x/Lynko_0.2.4_x64-setup.exe" },
+            { "browser_download_url": "https://x/Lynko_0.2.4_x64_en-US.msi" },
+        ]});
+        let want = if cfg!(windows) {
+            "https://x/Lynko_0.2.4_x64-setup.exe"
+        } else if cfg!(target_os = "macos") {
+            ""
+        } else {
+            "https://x/Lynko_0.2.4_amd64.deb"
+        };
+        assert_eq!(installer_asset(&rel), want);
+        assert_eq!(installer_asset(&serde_json::json!({})), "");
+    }
 
     /// The phone parses this with JSONObject, so it must be a single valid
     /// JSON object with t="hello" — a hand-rolled format! string with an
