@@ -135,7 +135,11 @@
     "share_diag_link": "Link:",
     "share_diag_service": "Service:",
     "share_diag_usb": "USB:",
-    "favorite": "Favorite"
+    "favorite": "Favorite",
+    "err_queue_offline": "No desktop linked — queued until the link is back.",
+    "err_queue_link_lost": "Connection lost — queued until the link is back.",
+    "err_queue_changed": "File changed since it was queued.",
+    "err_queue_missing": "Queued file is no longer available."
   },
   "desktop": {
     "nav_devices": "Devices",

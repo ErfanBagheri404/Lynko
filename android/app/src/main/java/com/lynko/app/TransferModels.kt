@@ -26,6 +26,12 @@ data class TransferFile(
      *  the short file and then drops it (its size/checksum check fails), so a
      *  skipped file never lands half-written. */
     @Volatile var cancel: Boolean = false
+    /** Offline-paused: the bytes are snapshotted in [SendQueue] and retried
+     *  when the desktop link comes back (ShareSender.retryQueued). Rendered as
+     *  the "Queue" row; status stays non-terminal, never regresses. */
+    @Volatile var queued: Boolean = false
+    /** Failure reason as a Loc key ("err_queue_changed", ...) or blank. */
+    @Volatile var failReason: String = ""
 }
 
 /**
