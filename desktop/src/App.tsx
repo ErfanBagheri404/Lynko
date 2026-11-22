@@ -125,6 +125,7 @@ interface Toast {
   id: number;
   msg: string;
   kind: "info" | "ok" | "err";
+  at: number;
 }
 
 let toastUid = 0;
@@ -134,7 +135,11 @@ function useToasts() {
 
   const push = useCallback((msg: string, kind: Toast["kind"] = "info") => {
     const id = ++toastUid;
-    setToasts((t) => [...t.slice(-4), { id, msg, kind }]);
+    const at = Date.now();
+    setToasts((t) => [
+      ...t.filter((x) => !(x.msg === msg && at - x.at < 4000)).slice(-4),
+      { id, msg, kind, at },
+    ]);
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4000);
   }, []);
 
@@ -778,7 +783,7 @@ function DevicesView({ devices, link, toast, lang }: ShellProps) {
                 <div key={d.id} className="devrow">
                   <span className={d.id.startsWith("usb:") ? "dev-dot usb" : "dev-dot on"} />
                   <div className="who"><strong>{d.name}</strong><span className={d.id.startsWith("usb:") ? "via" : "addr"} title={d.address}>{d.id.startsWith("usb:") ? T("via_usb") : d.address}</span>
-                    {pairUnavailable === d.id && <span role="status" style={{color: "var(--amber, #ffb454)", maxWidth: 340}}>{T("pair_hint_open")}</span>}
+                    {pairUnavailable === d.id && <span role="status" style={{color: "var(--signal)", maxWidth: 340}}>{T("pair_hint_open")}</span>}
                   </div>
                   <button className="btn sm primary" disabled={checkingPair !== null} onClick={() => pair(d)}>{checkingPair === d.id ? T("checking") : T("pair")}</button>
                 </div>
@@ -1396,16 +1401,17 @@ function FilesView(props: ShellProps) {
           <div className="file-list">
             {files.map((f) => {
               const pct = f.size && f.written ? Math.min(100, Math.round((f.written / f.size) * 100)) : null;
+              const errText = f.error;
               return (
                 <div className="file-row" key={f.id}>
                   <IconFiles /><span>{f.name}</span>
                   <span className="sz">
                     {f.size ? `${(f.size / 1024).toFixed(0)} KB` : "…"} · {extra(lang,f.status)}
-                    {pct != null && f.status === "sent" && f.written! < (f.size ?? 0) ? ` · ${pct}%` : ""}
+                    {pct != null && f.written! < (f.size ?? 0) ? ` · ${pct}%` : ""}
                   </span>
                   {f.status==='queued' && <button className="btn sm ghost" onClick={()=>props.cancelFile(f.id)}>{extra(lang,'cancel')}</button>}
                   {['failed','cancelled'].includes(f.status) && <button className="btn sm ghost" onClick={()=>props.retryFile(f.id)}>{extra(lang,'retry')}</button>}
-                  {f.error && <span role="status">{f.error}</span>}
+                  {errText && <span className="hook-error" role="status">{errText}</span>}
                   {pct != null && (
                     <span className="fbar" aria-hidden="true"><i style={{ width: `${pct}%` }} /></span>
                   )}
@@ -1578,6 +1584,23 @@ function SettingsView(props: ShellProps) {
                     title={l.label}
                   >
                     {l.autonym}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="set-row">
+            <div className="what"><strong>{extra(lang,'theme')}</strong></div>
+            <div className="ctl">
+              <div className="lang-switch">
+                {(['system','dark','light'] as const).map((th) => (
+                  <button
+                    key={th}
+                    className={props.prefs.theme === th ? "lang-btn on" : "lang-btn"}
+                    aria-pressed={props.prefs.theme === th}
+                    onClick={()=>props.updatePrefs({theme:th})}
+                  >
+                    {extra(lang, th === 'system' ? 'themeSystem' : th === 'dark' ? 'themeDark' : 'themeLight')}
                   </button>
                 ))}
               </div>

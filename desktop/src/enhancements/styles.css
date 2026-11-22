@@ -9,12 +9,12 @@
 .health-grid dd {margin:4px 0;}
 .feature-grid {display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;}
 .feature-grid label,.check-label {display:flex;gap:10px;align-items:center;min-height:40px;}
-.enhancement-panel input[type=checkbox] {accent-color:var(--amber,#ffb454);width:18px;height:18px;}
+.enhancement-panel input[type=checkbox] {accent-color:var(--amber,var(--signal));width:18px;height:18px;}
 .privacy-form,.blocked-row,.comfort-row {display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
 .blocked-row {justify-content:space-between;border-bottom:1px solid var(--line);padding:8px 0;}
 .comfort-row {padding:8px 0 16px;}
 .comfort-row label {display:flex;align-items:center;gap:8px;}
-.comfort-row button[aria-pressed=true] {color:#ffb454;border-color:#ffb454;}
+.comfort-row button[aria-pressed=true] {color:var(--signal);border-color:var(--signal);}
 .screen-canvas {overflow:hidden;}
 .file-row {flex-wrap:wrap;}
 /* Separate the drop target's action and helper text on distinct lines. */
@@ -38,17 +38,17 @@ html[data-motion=off] *,html[data-motion=off] *::before,html[data-motion=off] *:
    min-width so a 0-byte start still shows a visible sliver. */
 .incoming-bar { appearance:none; -webkit-appearance:none; width:min(220px,40vw); height:4px; margin-inline:10px; vertical-align:middle; border:1px solid var(--line); border-radius:2px; background:transparent; }
 .incoming-bar::-webkit-progress-bar { background:transparent; }
-.incoming-bar::-webkit-progress-value { background:var(--accent,#FFB454); }
-.incoming-bar::-moz-progress-bar { background:var(--accent,#FFB454); }
+.incoming-bar::-webkit-progress-value { background:var(--accent,var(--signal)); }
+.incoming-bar::-moz-progress-bar { background:var(--accent,var(--signal)); }
 
 /* Update checker + What's New modal */
 .update-actions { display:flex; align-items:center; gap:10px; }
 .update-actions .ver { font-family:var(--mono); font-size:11.5px; color:var(--ink1); }
-.update-err { padding:8px 0 0; font-size:12px; color:#d98a8a; }
+.update-err { padding:8px 0 0; font-size:12px; color:var(--err); }
 .upd-badge {
   display:inline-block; margin-inline-end:8px; padding:2px 7px;
-  font-family:var(--mono); font-size:11px; color:#ffb454;
-  border:1px solid #ffb454; border-radius:2px;
+  font-family:var(--mono); font-size:11px; color:var(--signal);
+  border:1px solid var(--signal); border-radius:2px;
 }
 .update-modal { width:min(520px, calc(100vw - 48px)); max-height:min(70vh, 640px); overflow:auto; }
 .upd-date { margin:0 0 10px; font-family:var(--mono); font-size:11.5px; color:var(--ink1); }
@@ -67,11 +67,11 @@ html[data-motion=off] *,html[data-motion=off] *::before,html[data-motion=off] *:
   font-family:var(--ui); font-size:12px;
 }
 .qbtn:hover { border-color:var(--signal-line); color:var(--ink0); }
-.qbtn.on { color:#ffb454; border-color:#ffb454; }
+.qbtn.on { color:var(--signal); border-color:var(--signal); }
 
 /* Notification per-app mute / snooze */
 .notif-apps .row { display:flex; gap:6px; margin-inline-start:auto; }
-.btn.sm.on { color:#ffb454; border-color:#ffb454; }
+.btn.sm.on { color:var(--signal); border-color:var(--signal); }
 
 /* LocalSend-parity transfer UI: progress panel + receive history */
 .incoming-progress { position:fixed; bottom:48px; right:20px; z-index:80; width:min(420px,80vw); padding:14px 16px; background:var(--card); border:1px solid var(--line); }
@@ -81,7 +81,7 @@ html[data-motion=off] *,html[data-motion=off] *::before,html[data-motion=off] *:
 .incoming-files li { display:flex; gap:10px; align-items:baseline; padding:6px 0; border-bottom:1px solid var(--line); font-size:12px; }
 .incoming-file-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .incoming-file-size { color:var(--ink1,#8b8d90); font-variant-numeric:tabular-nums; }
-.incoming-file-state { color:var(--accent,#FFB454); min-width:64px; text-align:end; }
+.incoming-file-state { color:var(--accent,var(--signal)); min-width:64px; text-align:end; }
 .incoming-history { margin:16px 0; border-top:1px solid var(--line); }
 .incoming-history-head { display:flex; align-items:center; justify-content:space-between; padding:10px 0; }
 .incoming-history-head h3 { margin:0; font-size:13px; letter-spacing:.02em; text-transform:uppercase; color:var(--ink1,#8b8d90); }
@@ -123,9 +123,9 @@ html[data-motion=off] *,html[data-motion=off] *::before,html[data-motion=off] *:
 .updm-actions { display: flex; align-items: center; justify-content: flex-start; gap: 10px; padding-top: 16px; border-top: 1px solid var(--line); }
 .updm-actions .btn.primary { min-width: 148px; }
 .updm-prog { flex: 1; height: 6px; border-radius: 3px; background: var(--card2); overflow: hidden; }
-.updm-prog > span { display: block; height: 100%; background: var(--accent, #ffb454); transition: width .2s linear; }
+.updm-prog > span { display: block; height: 100%; background: var(--accent, var(--signal)); transition: width .2s linear; }
 .updm-prog-lbl { font-family: var(--mono); font-size: 11px; color: var(--ink1); white-space: nowrap; }
-.updm-err { padding: 8px 0 0; font-size: 12px; color: #d98a8a; overflow-wrap: anywhere; }
+.updm-err { padding: 8px 0 0; font-size: 12px; color: var(--err); overflow-wrap: anywhere; }
 .updm-side {
   display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 7px;
   padding: 24px 16px; background: var(--card2); border-inline-start: 1px solid var(--line);

@@ -102,6 +102,28 @@ export default function Onboarding({ lang, prefs, updatePrefs, toast, onDone }: 
             />
           </div>
         ))}
+        <div className="onb-sect onb-sect-theme">
+          <b>{T("ob_appearance")}</b>
+        </div>
+        <div className="onb-prow onb-theme">
+          <span className="onb-ico"><IconTheme /></span>
+          <div className="onb-txt">
+            <div className="onb-t">{T("ob_theme")}</div>
+            <div className="onb-d">{T("ob_theme_desc")}</div>
+          </div>
+          <div className="lang-switch">
+            {(["system", "dark", "light"] as const).map((th) => (
+              <button
+                key={th}
+                className={prefs.theme === th ? "lang-btn on" : "lang-btn"}
+                aria-pressed={prefs.theme === th}
+                onClick={() => updatePrefs({ theme: th })}
+              >
+                {T(th === "system" ? "ob_theme_system" : th === "dark" ? "ob_theme_dark" : "ob_theme_light")}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="onb-act">
           <button
             className="onb-btn"
@@ -136,6 +158,15 @@ function IconAutostart() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M4 7h16M4 12h10M4 17h7" />
+    </svg>
+  );
+}
+
+function IconTheme() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4" />
     </svg>
   );
 }
