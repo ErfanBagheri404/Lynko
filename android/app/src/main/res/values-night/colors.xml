@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="paper">#0A0B0D</color>
+    <color name="card">#131417</color>
+    <color name="card_alt">#121316</color>
+    <color name="panel">#1A1B1E</color>
+    <color name="panel_hi">#26272B</color>
+    <color name="line">#303034</color>
+    <color name="line_soft">#1F2024</color>
+    <color name="line_strong">#3A3B40</color>
+    <color name="well">#0E0F12</color>
+    <color name="stage">#15161A</color>
+    <color name="overlay">#16181A</color>
+    <color name="ink0">#E8E6E1</color>
+    <color name="ink1">#8B8D90</color>
+    <color name="ink2">#8A8C90</color>
+    <color name="faint">#555658</color>
+    <color name="faint2">#6A6C70</color>
+    <color name="muted">#9A9CA0</color>
+    <color name="amber">#FFB454</color>
+    <color name="amber_dim">#D9A85C</color>
+    <color name="amber_press">#E6A24B</color>
+    <color name="on_amber">#1A1006</color>
+    <color name="green">#4ADE80</color>
+    <color name="amber_wash">#17FFB454</color>
+    <color name="amber_wash_soft">#0DFFB454</color>
+    <color name="amber_stroke">#59FFB454</color>
+    <color name="white_stroke">#1FFFFFFF</color>
+    <color name="dot_idle">#6C7178</color>
+    <color name="control_normal">#3A3D42</color>
+    <color name="amber_track">#6B4A16</color>
+    <color name="switch_idle">#2A2C30</color>
+    <color name="pressed">#141518</color>
+</resources>

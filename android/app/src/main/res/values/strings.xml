@@ -22,7 +22,7 @@
     <string name="fps_zero">0 fps</string>
 
     <!-- First-run prep screen -->
-    <string name="prep_title">Four things, once.</string>
+    <string name="prep_title">A few things, once.</string>
     <string name="prep_lede">Your computer will ask for these anyway. Set them now and the room just works.</string>
     <string name="prep_taps">Let the computer press</string>
     <string name="prep_taps_sub">Taps, swipes and keys, only while linked.</string>
@@ -40,6 +40,11 @@
     <string name="prep_note">%1$d of 3 on · the rest can wait</string>
     <string name="prep_entry">Prepare this phone</string>
     <string name="prep_back">Back</string>
+    <string name="prep_theme">Theme</string>
+    <string name="prep_theme_sub">Match the system, or pin light or dark.</string>
+    <string name="prep_theme_system">System</string>
+    <string name="prep_theme_dark">Dark</string>
+    <string name="prep_theme_light">Light</string>
     <string name="prep_state_on">on</string>
     <string name="prep_state_off">off</string>
     <string name="home_hint">Same Wi-Fi · desktop app required</string>
@@ -47,4 +52,21 @@
     <string name="step_2">Enter the PIN shown on your desktop</string>
     <string name="step_3">Mirror, share and control from the app</string>
     <string name="how_it_works">HOW IT WORKS</string>
+    <string name="update_check">Check for updates</string>
+    <string name="update_desc">New versions from GitHub releases</string>
+    <string name="update_checking">Checking…</string>
+    <string name="update_uptodate">You are up to date</string>
+    <string name="update_available">Update available</string>
+    <string name="update_failed">Check failed</string>
+    <string name="update_title">Update available</string>
+    <string name="update_whatsnew">What is new</string>
+    <string name="update_download">Download</string>
+    <string name="update_downloading">Downloading…</string>
+    <string name="update_later">Later</string>
+    <string name="update_published">Published</string>
+    <string name="update_allow_sources">Lynko needs permission to install apps from this source. Turn it on, then tap Download again.</string>
+    <string name="update_open_settings">Open settings</string>
+    <string name="update_install_failed">Download failed</string>
+    <string name="update_verify_failed">The downloaded update is not a valid Lynko build signed by this app, so it was not installed.</string>
+    <string name="update_download_too_large">The update is larger than Lynko can download safely.</string>
 </resources>

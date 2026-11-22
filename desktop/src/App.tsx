@@ -134,6 +134,9 @@ function useToasts() {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   const push = useCallback((msg: string, kind: Toast["kind"] = "info") => {
+    // Errors live in the dev console only; a toast per failed poll buries the
+    // UI in noise. Action failures still surface in their own inline state.
+    if (kind === "err") return console.error(msg);
     const id = ++toastUid;
     const at = Date.now();
     setToasts((t) => [
@@ -696,13 +699,17 @@ function DevicesView({ devices, link, toast, lang }: ShellProps) {
   };
 
   const disconnect = async () => {
-    await api.invoke("disconnect");
-    toast(tr(lang, "toasts", "disconnected"), "info");
+    try {
+      await api.invoke("disconnect");
+      toast(tr(lang, "toasts", "disconnected"), "info");
+    } catch (e) { toast(`Disconnect failed: ${e}`, "err"); }
   };
 
   const forget = async (d: Device) => {
-    await api.invoke("forget_device", { deviceId: d.id });
-    toast(tr(lang, "toasts", "forgot").replace("{name}", d.name), "info");
+    try {
+      await api.invoke("forget_device", { deviceId: d.id });
+      toast(tr(lang, "toasts", "forgot").replace("{name}", d.name), "info");
+    } catch (e) { toast(`Forget failed: ${e}`, "err"); }
   };
 
   const paired = devices.filter((d) => d.paired);
@@ -1077,12 +1084,12 @@ function ScreenView(props: ShellProps) {
     if (dragging.current) {
       dragging.current = false;
       const p = norm(ev);
-      try { await api.invoke("inject_drag_end", { x: p.x, y: p.y }); } catch {}
+      try { await api.invoke("inject_drag_end", { x: p.x, y: p.y }); } catch (e) { toast(String(e), "err"); }
       dragStart.current = null;
       return;
     }
     const p = norm(ev);
-    try { await api.invoke("inject_tap", { x: p.x, y: p.y }); } catch {}
+    try { await api.invoke("inject_tap", { x: p.x, y: p.y }); } catch (e) { toast(String(e), "err"); }
   };
 
   const onKey = async (ev: React.KeyboardEvent) => {
@@ -1093,7 +1100,7 @@ function ScreenView(props: ShellProps) {
       try {
         const clip = await api.invoke<string>("get_pc_clipboard");
         if (clip) await api.invoke("inject_text", { text: clip });
-      } catch {}
+      } catch (e) { toast(String(e), "err"); }
       return;
     }
     // Everything else goes through the shared, tested key map — so a modifier
@@ -1108,10 +1115,10 @@ function ScreenView(props: ShellProps) {
     });
     if (act.kind === "drop") return;
     if (act.kind === "text") {
-      try { await api.invoke("inject_text", { text: act.text }); } catch {}
+      try { await api.invoke("inject_text", { text: act.text }); } catch (e) { toast(String(e), "err"); }
     } else {
       ev.preventDefault();
-      try { await api.invoke("inject_key", { key: act.key }); } catch {}
+      try { await api.invoke("inject_key", { key: act.key }); } catch (e) { toast(String(e), "err"); }
     }
   };
 
@@ -1182,7 +1189,7 @@ function ScreenView(props: ShellProps) {
         await document.exitFullscreen();
         setFullscreen(false);
       }
-    } catch {}
+    } catch (e) { toast(String(e), "err"); }
   };
 
   return (
@@ -1236,9 +1243,9 @@ function ScreenView(props: ShellProps) {
             : <button className="rail-icon" onClick={stop} title={T("stop")} aria-label={T("stop")}><IconStop /></button>}
         </div>
         <div className="screen-rail-group">
-          <button className="rail-icon" disabled={!link.connected} onClick={() => { try { void api.invoke("inject_key", { key: "BACK" }); } catch {} }} title={T("back")} aria-label={T("back")}><IconBack /></button>
-          <button className="rail-icon" disabled={!link.connected} onClick={() => { try { void api.invoke("inject_key", { key: "HOME" }); } catch {} }} title={T("home")} aria-label={T("home")}><IconHome /></button>
-          <button className="rail-icon" disabled={!link.connected} onClick={() => { try { void api.invoke("inject_key", { key: "RECENTS" }); } catch {} }} title={T("recents")} aria-label={T("recents")}><IconRecents /></button>
+          <button className="rail-icon" disabled={!link.connected} onClick={() => { void api.invoke("inject_key", { key: "BACK" }).catch(e => toast(String(e), "err")); }} title={T("back")} aria-label={T("back")}><IconBack /></button>
+          <button className="rail-icon" disabled={!link.connected} onClick={() => { void api.invoke("inject_key", { key: "HOME" }).catch(e => toast(String(e), "err")); }} title={T("home")} aria-label={T("home")}><IconHome /></button>
+          <button className="rail-icon" disabled={!link.connected} onClick={() => { void api.invoke("inject_key", { key: "RECENTS" }).catch(e => toast(String(e), "err")); }} title={T("recents")} aria-label={T("recents")}><IconRecents /></button>
         </div>
         <div className="screen-rail-group">
           <button className="rail-icon" disabled={!link.connected} onClick={toggleRotate} title={rotated ? T("upright") : T("rotate")} aria-label={rotated ? T("upright") : T("rotate")}><IconRotate /></button>
@@ -1357,71 +1364,110 @@ function FilesView(props: ShellProps) {
     } catch (e) { toast(`Browse failed: ${e}`, "err"); }
   };
 
+  const num = (n: number) => String(n).padStart(2, "0");
+  const online = props.devices.filter((d) => d.online).length;
+  const paired = props.devices.filter((d) => d.paired).length;
+  const queued = files.some((f) => f.status === "queued");
+
   return (
-    <div className="view">
-      <PageHead title={T("files_title")} sub={T("files_sub")} />
-      <p className="desc">{extra(lang,'queueHint')}</p><p className="desc">{extra(lang,'queuePaused')}</p>
-      <div className="card">
-        {link.connected && target ? (
-          <div className="share-target">
-            <span className="share-target-label">{extra(lang, "shareTarget")}</span>
-            <button
-              className="btn sm ghost"
-              onClick={() => props.setView("devices")}
-              title={extra(lang, "sharePickRecipient")}
-            >
-              {target.name}
-            </button>
-            <span className="share-target-state">{extra(lang, "shareConnected")}</span>
-          </div>
-        ) : (
-          <div className="share-target off">
-            <span className="share-target-label">{extra(lang, "shareTarget")}</span>
-            <span className="share-target-none">{extra(lang, "shareTargetNone")}</span>
-            <span className="share-target-hint">{extra(lang, "shareSameWifi")}</span>
-            <button className="btn sm ghost" onClick={() => props.setView("devices")}>
-              {extra(lang, "shareTroubleshoot")}
-            </button>
-          </div>
-        )}
-        <div
-          className={dragOver ? "dropzone over" : "dropzone"}
-          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={onDrop}
-          onClick={browse}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => { if (e.key === "Enter") browse(); }}
-        >
-          <strong>{T("drop_send")}</strong>
-          <span>{T("drop_browse")}</span>
+    <div className="view files-view">
+      <header className="files-masthead">
+        <div className="files-masthead-copy">
+          <span className="files-kicker" aria-hidden="true"><b>03</b></span>
+          <h1>{T("files_title")}</h1>
+          <p>{T("files_sub")}</p>
         </div>
-        {files.length > 0 && (
-          <div className="file-list">
-            {files.map((f) => {
-              const pct = f.size && f.written ? Math.min(100, Math.round((f.written / f.size) * 100)) : null;
-              const errText = f.error;
-              return (
-                <div className="file-row" key={f.id}>
-                  <IconFiles /><span>{f.name}</span>
-                  <span className="sz">
-                    {f.size ? `${(f.size / 1024).toFixed(0)} KB` : "…"} · {extra(lang,f.status)}
-                    {pct != null && f.written! < (f.size ?? 0) ? ` · ${pct}%` : ""}
-                  </span>
-                  {f.status==='queued' && <button className="btn sm ghost" onClick={()=>props.cancelFile(f.id)}>{extra(lang,'cancel')}</button>}
-                  {['failed','cancelled'].includes(f.status) && <button className="btn sm ghost" onClick={()=>props.retryFile(f.id)}>{extra(lang,'retry')}</button>}
-                  {errText && <span className="hook-error" role="status">{errText}</span>}
-                  {pct != null && (
-                    <span className="fbar" aria-hidden="true"><i style={{ width: `${pct}%` }} /></span>
-                  )}
-                </div>
-              );
-            })}
+        <div className="files-meters">
+          <span><i className={link.connected ? "on" : ""} />{T("online_count").replace("{n}", String(online))}</span>
+          <span>{T("paired_count").replace("{n}", String(paired))}</span>
+        </div>
+      </header>
+
+      <div className="files-workspace">
+        <section className="files-out" aria-label={T("send")}>
+          <div className="files-bayhead">
+            <h2>{T("send")}</h2>
+            <span className="files-baynum">{num(files.length)}</span>
           </div>
-        )}
+
+          <button
+            type="button"
+            className={link.connected ? "files-route live" : "files-route"}
+            onClick={() => props.setView("devices")}
+            title={extra(lang, "sharePickRecipient")}
+          >
+            <span className="files-route-icon"><IconDevices /></span>
+            <span className="files-route-copy">
+              <small>{extra(lang, "shareTarget")}</small>
+              <strong>{link.connected && target ? target.name : extra(lang, "shareTargetNone")}</strong>
+            </span>
+            {link.connected && (
+              <span className="files-route-state"><i />{extra(lang, "shareConnected")}</span>
+            )}
+          </button>
+
+          {!link.connected && (
+            <div className="files-offline">
+              <p>{extra(lang, "shareSameWifi")}</p>
+              <button className="btn sm ghost" onClick={() => props.setView("devices")}>
+                {extra(lang, "shareTroubleshoot")}
+              </button>
+            </div>
+          )}
+
+          <div
+            className={dragOver ? "dropzone files-drop over" : "dropzone files-drop"}
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={onDrop}
+            onClick={browse}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => { if (e.key === "Enter") browse(); }}
+          >
+            <span className="files-corner tl" aria-hidden="true" />
+            <span className="files-corner tr" aria-hidden="true" />
+            <span className="files-corner bl" aria-hidden="true" />
+            <span className="files-corner br" aria-hidden="true" />
+            <span className="files-drop-mark" aria-hidden="true"><IconFiles /></span>
+            <strong>{T("drop_send")}</strong>
+            <span>{T("drop_browse")}</span>
+          </div>
+
+          <p className="files-footnote">{extra(lang, "queueHint")}</p>
+          {queued && <p className="files-footnote dim">{extra(lang, "queuePaused")}</p>}
+
+          {files.length > 0 && (
+            <div className="files-queue">
+              <div className="files-bayhead">
+                <h2>{T("file_queue")}</h2>
+              </div>
+              {files.map((f, i) => {
+                const pct = f.size && f.written != null ? Math.min(100, Math.round((f.written / f.size) * 100)) : null;
+                const live = f.status === "sending" && pct != null;
+                return (
+                  <div className="file-row files-row" key={f.id}>
+                    <span className="files-row-id" aria-hidden="true">{num(i + 1)}</span>
+                    <span className="files-row-name" title={f.name}><IconFiles /><span>{f.name}</span></span>
+                    <span className="files-row-state">{extra(lang, f.status)}</span>
+                    <span className="files-row-size">{live ? `${(f.written! / 1024).toFixed(0)} / ${(f.size! / 1024).toFixed(0)} KB · ${pct}%` : f.size ? `${(f.size / 1024).toFixed(0)} KB` : "…"}</span>
+                    {f.status === "queued" && <button className="btn sm ghost" onClick={() => props.cancelFile(f.id)}>{extra(lang, "cancel")}</button>}
+                    {["failed", "cancelled"].includes(f.status) && <button className="btn sm ghost" onClick={() => props.retryFile(f.id)}>{extra(lang, "retry")}</button>}
+                    {f.error && <span className="files-row-err" role="status">{f.error}</span>}
+                    {pct != null && (f.status === "sent" || live) && (
+                      <span className="fbar" aria-hidden="true"><i style={{ width: `${pct}%` }} /></span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        <aside className="files-in">
+          <ShareHistory lang={lang} />
+        </aside>
       </div>
-      <ShareHistory lang={lang} />
     </div>
   );
 }
@@ -1549,7 +1595,7 @@ function NotificationsView(props: ShellProps) {
 /* ------------------------------------------------------------------ */
 
 function SettingsView(props: ShellProps) {
-  const { lang, setLang } = props;
+  const { lang, setLang, toast } = props;
   // Both toggles persist: flipping one actually does something on THIS run
   // and survives a restart (localStorage), instead of resetting on every
   // navigation the way plain useState(true) did.
@@ -1560,7 +1606,7 @@ function SettingsView(props: ShellProps) {
   const toggleAutoReconnect = (on: boolean) => {
     setAutoReconnect(on);
     localStorage.setItem("lynko-autoreconnect", on ? "1" : "0");
-    void api.invoke("set_auto_reconnect", { on }).catch(() => {});
+    void api.invoke("set_auto_reconnect", { on }).catch(e => toast(String(e), "err"));
   };
   const toggleToasts = (on: boolean) => {
     setToasts(on);
