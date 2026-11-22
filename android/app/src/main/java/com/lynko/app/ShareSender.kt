@@ -363,6 +363,11 @@ object ShareSender {
             // phone's cache.
             staged.forEach { if (it.id !in queuedIds) runCatching { it.file.delete() } }
             cancelUrl = null
+            // Release the send lock for EVERY exit path (sent, queued offline,
+            // link lost, protocol error). Without this a single ordinary send
+            // leaves `started` true and all later sends — and the queue's
+            // retryQueued() — silently no-op.
+            started.set(false)
             Handler(Looper.getMainLooper()).post { onChange?.invoke() }
         }
     }
