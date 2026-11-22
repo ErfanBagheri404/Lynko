@@ -135,7 +135,11 @@
     "share_diag_link": "连接：",
     "share_diag_service": "服务：",
     "share_diag_usb": "USB：",
-    "favorite": "收藏"
+    "favorite": "收藏",
+    "err_queue_offline": "未连接桌面端 — 已排队，待连接恢复后发送。",
+    "err_queue_link_lost": "连接已断开 — 已排队，待连接恢复后发送。",
+    "err_queue_changed": "文件在排队后已发生变化。",
+    "err_queue_missing": "排队中的文件已不存在。"
   },
   "desktop": {
     "nav_devices": "设备",
