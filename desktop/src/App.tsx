@@ -775,6 +775,8 @@ function DevicesView({ devices, link, toast, lang }: ShellProps) {
   };
 
   const forget = async (d: Device) => {
+    // Destructive and unrecoverable without the phone's PIN — never on one click.
+    if (!window.confirm(`Forget ${d.name}? You will need its PIN to pair again.`)) return;
     try {
       await api.invoke("forget_device", { deviceId: d.id });
       toast(tr(lang, "toasts", "forgot").replace("{name}", d.name), "info");
@@ -1119,7 +1121,8 @@ function ScreenView(props: ShellProps) {
   // switched off in Settings.
   useEffect(() => {
     const flip = () => {
-      if (!props.prefs.screen) { void start(); return; }
+      // Screen mirroring switched off in Settings: the hotkey must not start it.
+      if (!props.prefs.screen) { toast(tr(lang, "desktop", "screen_disabled"), "info"); return; }
       if (streaming) void stop(); else void start();
     };
     window.addEventListener("lynko-toggle-mirror", flip);

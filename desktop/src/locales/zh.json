@@ -121,6 +121,7 @@
     "exit": "退出",
     "text_sent": "文字已发送",
     "screen_starting": "已请求录制",
+    "screen_disabled": "设置中已关闭屏幕镜像",
     "stream_stopped": "已请求停止",
     "clipboard_title": "剪贴板",
     "clipboard_sub": "在电脑与手机之间同步剪贴板。",

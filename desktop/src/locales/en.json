@@ -123,6 +123,7 @@
     "exit": "Exit",
     "text_sent": "Text sent",
     "screen_starting": "Capture requested",
+    "screen_disabled": "Screen mirroring is off in Settings",
     "stream_stopped": "Stop requested",
     "clipboard_title": "Clipboard",
     "clipboard_sub": "Sync your clipboard between PC and phone.",
