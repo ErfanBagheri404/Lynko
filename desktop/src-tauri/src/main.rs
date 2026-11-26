@@ -1777,80 +1777,123 @@ fn save_window(win: &tauri::WebviewWindow) {
     let body = serde_json::json!({
         "x": rect.0, "y": rect.1, "w": rect.2, "h": rect.3, "max": rect.4
     });
-    let _ = std::fs::write(path, body.to_string());
+    // Write-then-rename: a crash or a full disk leaves the previous file
+    // intact instead of a truncated one that fails to parse on next start.
+    let tmp = path.with_extension("json.tmp");
+    if std::fs::write(&tmp, body.to_string()).is_ok() {
+        let _ = std::fs::rename(&tmp, &path);
+    }
 }
 
-/// Clamp a saved rect into the monitor rect (physical px), reserving 80px of
-/// height for the taskbar — tao reports the full monitor rect, not the work
-/// area. Pure so the fit rules are unit-tested (see tests below).
-fn clamp_rect(saved: Option<(i64, i64, i64, i64)>, mon: (i32, i32, i32, i32)) -> (i32, i32, u32, u32) {
-    let (mx, my, mw, mh) = mon;
-    let avail_h = (mh - 80).max(560);
+/// Clamp a rect into the monitor's work area (physical px) — the OS already
+/// excludes the taskbar there, so there is no guessed reserve. `saved` None =
+/// default 1100x750 centred. Pure so the fit rules are unit-tested below.
+fn clamp_rect(saved: Option<(i64, i64, i64, i64)>, work: (i32, i32, i32, i32)) -> (i32, i32, u32, u32) {
+    let (mx, my, mw, mh) = (work.0, work.1, work.2.max(1), work.3.max(1));
+    let (min_w, min_h) = (800.min(mw), 560.min(mh));
     let (sx, sy, sw, sh) = saved.unwrap_or((i64::MIN, i64::MIN, 1100, 750));
-    let w = sw.clamp(800, (mw - 40).max(800) as i64) as i32;
-    let h = sh.clamp(560, avail_h as i64) as i32;
+    let w = sw.clamp(min_w as i64, mw as i64) as i32;
+    let h = sh.clamp(min_h as i64, mh as i64) as i32;
     let cx = if sx == i64::MIN { mx + (mw - w) / 2 } else { sx as i32 };
-    let cy = if sy == i64::MIN { my + (avail_h - h) / 2 } else { sy as i32 };
+    let cy = if sy == i64::MIN { my + (mh - h) / 2 } else { sy as i32 };
     let x = cx.clamp(mx, (mx + mw - w).max(mx));
-    let y = cy.clamp(my, (my + avail_h - h).max(my));
+    let y = cy.clamp(my, (my + mh - h).max(my));
     (x, y, w as u32, h as u32)
 }
 
-/// Restore the saved rect, clamped into the current monitor's work area.
+fn work_area(m: &tauri::Monitor) -> (i32, i32, i32, i32) {
+    let a = m.work_area();
+    (a.position.x, a.position.y, a.size.width as i32, a.size.height as i32)
+}
+
+/// Overlap of a saved rect with a monitor work area; 0 = different display.
+fn overlap(work: (i32, i32, i32, i32), saved: (i64, i64, i64, i64)) -> i64 {
+    let x0 = (work.0 as i64).max(saved.0);
+    let y0 = (work.1 as i64).max(saved.1);
+    let x1 = (work.0 as i64 + work.2 as i64).min(saved.0 + saved.2);
+    let y1 = (work.1 as i64 + work.3 as i64).min(saved.1 + saved.3);
+    if x1 <= x0 || y1 <= y0 { 0 } else { (x1 - x0) * (y1 - y0) }
+}
+
+/// Restore the saved rect on the monitor it was saved on, clamped into that
+/// monitor's work area (a display may have been unplugged or resized since).
 fn restore_window(win: &tauri::WebviewWindow) {
     let saved: Option<serde_json::Value> = window_state_path(&win.app_handle())
         .and_then(|p| std::fs::read_to_string(p).ok())
         .and_then(|s| serde_json::from_str(&s).ok());
     let num = |k: &str| saved.as_ref().and_then(|s| s.get(k)).and_then(|v| v.as_i64());
 
-    let mon = win.current_monitor().ok().flatten();
-    let rect = match &mon {
-        Some(m) => (
-            m.position().x,
-            m.position().y,
-            m.size().width as i32,
-            m.size().height as i32,
-        ),
-        None => (0, 0, 1280, 720),
-    };
     let saved_rect = match (num("x"), num("y"), num("w"), num("h")) {
         (Some(x), Some(y), Some(w), Some(h)) => Some((x, y, w, h)),
         _ => None,
     };
-    let (x, y, w, h) = clamp_rect(saved_rect, rect);
+    let mons = win.available_monitors().unwrap_or_default();
+    let area = saved_rect
+        .and_then(|r| {
+            mons.iter()
+                .map(|m| (overlap(work_area(m), r), work_area(m)))
+                .max_by_key(|(a, _)| *a)
+                .filter(|(a, _)| *a > 0)
+                .map(|(_, w)| w)
+        })
+        .or_else(|| win.current_monitor().ok().flatten().map(|m| work_area(&m)))
+        .or_else(|| mons.first().map(work_area))
+        .unwrap_or((0, 0, 1280, 720));
+    let (x, y, w, h) = clamp_rect(saved_rect, area);
+    let max = saved.as_ref().and_then(|s| s.get("max")).and_then(|v| v.as_bool()).unwrap_or(false);
+    // Seed the tracker before any event fires: closing a restored-maximized
+    // window must save this normal rect, not the maximized one.
+    *GEOM.lock().unwrap() = Some((x, y, w, h, max));
     let _ = win.set_size(tauri::PhysicalSize::new(w, h));
     let _ = win.set_position(tauri::PhysicalPosition::new(x, y));
-    if saved.as_ref().and_then(|s| s.get("max")).and_then(|v| v.as_bool()).unwrap_or(false) {
+    if max {
         let _ = win.maximize();
     }
 }
 
 #[cfg(test)]
 mod window_geometry_tests {
-    use super::clamp_rect;
+    use super::{clamp_rect, overlap};
 
-    /// 1366x768 laptop: the old 750px default ran 62px under the taskbar.
+    /// 1366x768 laptop, taskbar 80px: the old 750px default ran under it. The
+    /// work area already excludes the taskbar, so the default just fits.
     #[test]
     fn default_fits_above_taskbar() {
-        let (x, y, w, h) = clamp_rect(None, (0, 0, 1366, 768));
+        let (x, y, w, h) = clamp_rect(None, (0, 0, 1366, 688));
         assert_eq!((x, y), (133, 0));
-        assert!(h as i32 <= 768 - 80, "status bar under the taskbar: {h}");
+        assert!(h as i32 <= 688, "status bar under the taskbar: {h}");
         assert!(x + w as i32 <= 1366);
     }
 
     /// A rect saved on a bigger monitor must land fully inside the current one.
     #[test]
     fn offscreen_saved_rect_is_pulled_back() {
-        let (x, y, w, h) = clamp_rect(Some((5000, 4000, 2000, 2000)), (0, 0, 1366, 768));
+        let (x, y, w, h) = clamp_rect(Some((5000, 4000, 2000, 2000)), (0, 0, 1366, 688));
         assert!(x >= 0 && y >= 0);
-        assert!(x + w as i32 <= 1366 && y + h as i32 <= 768 - 80);
+        assert!(x + w as i32 <= 1366 && y + h as i32 <= 688);
     }
 
     /// Absurdly small saved size is raised to the usable minimum, never inverted.
     #[test]
     fn tiny_saved_rect_is_raised() {
-        let (x, y, w, h) = clamp_rect(Some((100, 100, 300, 300)), (0, 0, 1366, 768));
+        let (x, y, w, h) = clamp_rect(Some((100, 100, 300, 300)), (0, 0, 1366, 688));
         assert_eq!((x, y, w, h), (100, 100, 800, 560));
+    }
+
+    /// A display smaller than the minimum gets the display, not an overflow.
+    #[test]
+    fn small_display_is_not_overflowed() {
+        let (x, y, w, h) = clamp_rect(Some((0, 0, 1100, 750)), (0, 0, 700, 500));
+        assert_eq!((x, y, w, h), (0, 0, 700, 500));
+    }
+
+    /// Second monitor: the saved rect matches that monitor, not (0,0).
+    #[test]
+    fn saved_rect_picks_its_own_monitor() {
+        let left = (0, 0, 1366, 688);
+        let right = (1366, 0, 1920, 1040);
+        assert_eq!(overlap(left, (1500, 100, 900, 600)), 0);
+        assert_eq!(overlap(right, (1500, 100, 900, 600)), 900 * 600);
     }
 }
 
