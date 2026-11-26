@@ -68,7 +68,7 @@ pub fn set_autostart(on: bool) -> Result<PreflightState, String> {
         let exe = current_exe()?;
         // Quoted so paths with spaces survive CreateProcess at login.
         run(
-            "reg",
+            &sys32("reg"),
             &[
                 "add", RUN_KEY, "/v", VALUE_NAME, "/t", "REG_SZ", "/d",
                 &format!("\"{exe}\""), "/f",
@@ -77,7 +77,7 @@ pub fn set_autostart(on: bool) -> Result<PreflightState, String> {
     } else {
         // reg delete exits 1 when the value is already gone — ignore the exit
         // code; the re-read below decides success (keeps the command repeatable).
-        run("reg", &["delete", RUN_KEY, "/v", VALUE_NAME, "/f"])?;
+        run(&sys32("reg"), &["delete", RUN_KEY, "/v", VALUE_NAME, "/f"])?;
     }
     let state = read_state()?;
     if state.autostart != on {
@@ -105,27 +105,44 @@ fn current_exe() -> Result<String, String> {
         .map_err(|e| format!("cannot resolve current exe: {e}"))
 }
 
+/// Absolute path to a System32 tool. A packaged GUI process inherits PATH from
+/// whatever launched it; resolving by name read "off" for both checks on a
+/// machine where the rule and the Run value both existed (issue #29, BUG-003).
+fn sys32(tool: &str) -> String {
+    let root = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into());
+    format!(r"{root}\System32\{tool}.exe")
+}
+
 /// `netsh advfirewall firewall show rule name=Lynko` exits 0 iff at least one
 /// rule matched (verified: 0 with rules present, 1 + "No rules match the
 /// specified criteria." when absent). Non-English Windows translates that
-/// message, so the exit code is the signal and stdout only confirms the name.
+/// message, so the exit code is the signal — not the rule name in stdout.
 fn firewall_rule() -> Result<bool, String> {
-    let out = Command::new("netsh")
+    let out = Command::new(sys32("netsh"))
         .args(["advfirewall", "firewall", "show", "rule", "name=Lynko"])
         .output()
         .map_err(|e| format!("netsh failed: {e}"))?;
     if out.status.success() {
-        return Ok(String::from_utf8_lossy(&out.stdout).contains(VALUE_NAME));
+        return Ok(true);
     }
-    // ponytail: a netsh failure (e.g. service down) reads as "not enabled";
-    // set_firewall(true) surfaces the real error on the next attempt.
-    Ok(false)
+    // The rule may carry another name (installer, or added by hand). Fall back
+    // to "any rule mentions this exe" — the program path is untranslated, so
+    // this survives localized Windows.
+    let all = Command::new(sys32("netsh"))
+        .args(["advfirewall", "firewall", "show", "rule", "name=all"])
+        .output()
+        .map_err(|e| format!("netsh failed: {e}"))?;
+    if !all.status.success() {
+        return Ok(false);
+    }
+    let exe = current_exe()?.to_lowercase();
+    Ok(String::from_utf8_lossy(&all.stdout).to_lowercase().contains(&exe))
 }
 
 /// `reg query ... /v Lynko` exits 0 iff the value exists (verified 1 +
 /// "ERROR: The system was unable to find..." when absent).
 fn autostart_value() -> Result<bool, String> {
-    let out = Command::new("reg")
+    let out = Command::new(sys32("reg"))
         .args(["query", RUN_KEY, "/v", VALUE_NAME])
         .output()
         .map_err(|e| format!("reg failed: {e}"))?;
@@ -149,17 +166,18 @@ fn elevated_netsh(args: &[String]) -> Result<(), String> {
     // PowerShell single-quoted elements; Start-Process joins -ArgumentList
     // array items with spaces and does NOT re-quote them, so the program path
     // carries its own double quotes (netsh parses those itself).
+    let netsh = sys32("netsh");
     let list = args
         .iter()
         .map(|a| format!("'{}'", a.replace('\'', "''")))
         .collect::<Vec<_>>()
         .join(",");
     let script = format!(
-        "try {{ $p = Start-Process -FilePath netsh -ArgumentList @({list}) \
+        "try {{ $p = Start-Process -FilePath '{netsh}' -ArgumentList @({list}) \
          -Verb RunAs -Wait -PassThru -ErrorAction Stop; exit $p.ExitCode }} \
          catch {{ Write-Output 'ELEVATION_DECLINED'; exit 1 }}"
     );
-    let out = Command::new("powershell")
+    let out = Command::new(sys32(r"WindowsPowerShell\v1.0\powershell"))
         .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &script])
         .output()
         .map_err(|e| format!("powershell failed: {e}"))?;

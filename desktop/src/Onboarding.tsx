@@ -28,7 +28,12 @@ export default function Onboarding({ lang, prefs, updatePrefs, toast, onDone }: 
   };
 
   useEffect(() => {
-    api.invoke<Preflight>("preflight_state").then(apply).catch(fail);
+    const read = () => api.invoke<Preflight>("preflight_state").then(apply).catch(fail);
+    read();
+    // Windows' own firewall / startup screens can be changed while the wizard
+    // sits open; re-read on focus so the toggles are not stale (BUG-003).
+    window.addEventListener("focus", read);
+    return () => window.removeEventListener("focus", read);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
