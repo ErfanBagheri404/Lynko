@@ -391,7 +391,11 @@ export default function App() {
     // window); mirror toggling needs the live `streaming` flag, which only
     // ScreenView has — re-dispatch as a DOM event it subscribes to.
     api.on<string>("lynko-hotkey", (e) => {
-      if (e.payload === "toggle_mirror") window.dispatchEvent(new Event("lynko-toggle-mirror"));
+      if (e.payload !== "toggle_mirror") return;
+      // Cancelable so ScreenView can claim it; unclaimed means the view is not
+      // mounted (the user is on another tab) — say so instead of doing nothing.
+      const ev = new Event("lynko-toggle-mirror", { cancelable: true });
+      if (window.dispatchEvent(ev)) toast(tr(lang, "desktop", "hotkey_needs_screen"), "info");
     }).then((u) => unsubs.push(u));
 
     api.on<Device[]>("discovery", (e) => setDevices(e.payload)).then((u) => unsubs.push(u));
@@ -775,8 +779,15 @@ function DevicesView({ devices, link, toast, lang }: ShellProps) {
   };
 
   const forget = async (d: Device) => {
-    // Destructive and unrecoverable without the phone's PIN — never on one click.
-    if (!window.confirm(`Forget ${d.name}? You will need its PIN to pair again.`)) return;
+    // Destructive and unrecoverable without the phone's PIN — never on one
+    // click. Native dialog, not window.confirm: a webview dialog is not
+    // guaranteed to be shown (and its labels are not ours to localize).
+    const { confirm } = await import("@tauri-apps/plugin-dialog");
+    const ok = await confirm(tr(lang, "desktop", "forget_confirm").replace("{name}", d.name), {
+      title: tr(lang, "desktop", "forget_title"),
+      kind: "warning",
+    });
+    if (!ok) return;
     try {
       await api.invoke("forget_device", { deviceId: d.id });
       toast(tr(lang, "toasts", "forgot").replace("{name}", d.name), "info");
@@ -1120,7 +1131,8 @@ function ScreenView(props: ShellProps) {
   // feature toggle still wins — a hotkey must not bypass what the user
   // switched off in Settings.
   useEffect(() => {
-    const flip = () => {
+    const flip = (e: Event) => {
+      e.preventDefault(); // claimed — the shell does not need to explain itself
       // Screen mirroring switched off in Settings: the hotkey must not start it.
       if (!props.prefs.screen) { toast(tr(lang, "desktop", "screen_disabled"), "info"); return; }
       if (streaming) void stop(); else void start();

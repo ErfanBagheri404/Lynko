@@ -151,8 +151,6 @@
     "no_signal": "بدون سیگنال",
     "no_signal_sub": "برای نمایش صفحه، گوشی را متصل کنید",
     "pair_connect": "جفت‌سازی و اتصال",
-    "pair_hint_open": "لینکو را در گوشی باز کنید و شروع را بزنید، سپس دوباره تلاش کنید.",
-    "checking": "در حال بررسی…",
     "paste_clip": "چسباندن کلیپ‌بورد",
     "phone_idle": "آماده",
     "phone_locked": "گوشی قفل است",
@@ -242,7 +240,10 @@
     "ob_theme_system": "سیستم",
     "ob_theme_dark": "تیره",
     "ob_theme_light": "روشن",
-    "ob_local_only": "فقط شبکه محلی"
+    "ob_local_only": "فقط شبکه محلی",
+    "forget_title": "فراموش کردن دستگاه",
+    "forget_confirm": "{name} فراموش شود؟ برای اتصال دوباره به پین آن نیاز دارید.",
+    "hotkey_needs_screen": "برای استفاده از میان‌بر آینه‌سازی، صفحه را باز کنید"
   },
   "settings": {
     "language": "زبان",

@@ -151,8 +151,6 @@
     "no_signal": "No signal",
     "no_signal_sub": "Connect a phone to start mirroring",
     "pair_connect": "Pair and connect",
-    "pair_hint_open": "Open Lynko on your phone and tap Start, then try again.",
-    "checking": "Checking…",
     "paste_clip": "Paste clipboard",
     "phone_idle": "Ready",
     "phone_locked": "Phone locked",
@@ -242,7 +240,10 @@
     "ob_theme_system": "System",
     "ob_theme_dark": "Dark",
     "ob_theme_light": "Light",
-    "ob_local_only": "Local network only"
+    "ob_local_only": "Local network only",
+    "forget_title": "Forget device",
+    "forget_confirm": "Forget {name}? You will need its PIN to pair again.",
+    "hotkey_needs_screen": "Open Screen to use the mirror hotkey"
   },
   "settings": {
     "language": "Language",

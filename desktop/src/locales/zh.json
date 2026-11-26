@@ -240,7 +240,10 @@
     "ob_theme_system": "跟随系统",
     "ob_theme_dark": "深色",
     "ob_theme_light": "浅色",
-    "ob_local_only": "仅限局域网"
+    "ob_local_only": "仅限局域网",
+    "forget_title": "忘记设备",
+    "forget_confirm": "忘记 {name}？再次配对需要它的 PIN。",
+    "hotkey_needs_screen": "打开“屏幕”以使用镜像快捷键"
   },
   "settings": {
     "language": "语言",
@@ -261,7 +264,8 @@
     "sec_features": "功能",
     "sec_notifications": "通知",
     "sec_updates": "更新",
-    "sec_about": "关于"},
+    "sec_about": "关于"
+  },
   "toasts": {
     "found_devices": "发现 {n} 台设备",
     "scan_failed": "扫描失败：{e}",
@@ -278,5 +282,6 @@
     "input_dead": "手机无法接收输入 — 打开 设置 → 无障碍 → Lynko，先关闭再开启",
     "need_accessibility": "点按与滑动需要无障碍权限：打开 设置 → 无障碍 → Lynko → 启用",
     "no_focused_field": "手机上没聚焦的文本框 — 请先在投屏中点一下",
-    "ob_failed": "无法更改该设置"}
+    "ob_failed": "无法更改该设置"
+  }
 }
