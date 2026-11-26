@@ -4,6 +4,23 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Lynko</title>
+    <style>
+      /* Paint dark before any stylesheet loads: the window must never flash,
+         or sit, as a white rectangle when the bundle fails to arrive. */
+      html, body { background: #0b0b0c; margin: 0; }
+      #boot {
+        position: fixed; inset: 0; display: none; place-items: center;
+        padding: 24px; text-align: left; background: #0b0b0c; color: #ececee;
+        font: 13px/1.65 ui-sans-serif, system-ui, sans-serif; z-index: 9;
+      }
+      #boot.show { display: grid; }
+      #boot strong { font-size: 15px; }
+      #boot p { margin: 6px 0 14px; color: #9a9aa2; max-width: 46ch; }
+      #boot button {
+        font: inherit; color: #ececee; background: #1b1b1f;
+        border: 1px solid #2e2e34; border-radius: 6px; padding: 6px 14px; cursor: pointer;
+      }
+    </style>
     <script>
       // "system" resolves the OS palette before CSS paints; explicit choices pass through.
       try {
@@ -13,9 +30,55 @@
           (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
       } catch (_) {}
     </script>
+    <script>
+      // Boot guard: a JS crash or a dead dev server left a blank window with
+      // no clue. Say what happened, in-app, and offer a retry.
+      (function () {
+        var shown = false;
+        function fail(msg) {
+          if (shown) return;
+          shown = true;
+          var b = document.getElementById("boot");
+          if (!b) return;
+          b.className = "show";
+          var d = document.createElement("div");
+          var h = document.createElement("strong");
+          h.textContent = "Lynko could not start";
+          var p = document.createElement("p");
+          p.textContent = msg || "";
+          var btn = document.createElement("button");
+          btn.textContent = "Retry";
+          btn.onclick = function () { location.reload(); };
+          d.appendChild(h); d.appendChild(p); d.appendChild(btn);
+          b.textContent = ""; b.appendChild(d);
+        }
+        window.addEventListener("error", function (e) {
+          if (e && e.message) fail(e.message);
+        });
+        window.addEventListener("unhandledrejection", function (e) {
+          fail(String((e && e.reason) || "Unhandled rejection"));
+        });
+        setTimeout(function () {
+          var r = document.getElementById("root");
+          if (!r || !r.childElementCount) {
+            fail("The interface never mounted — the dev server may still be starting.");
+          }
+        }, 12000);
+        // A slow first bundle can beat the timeout; get out of its way the
+        // moment React actually paints, instead of leaving a stale notice.
+        setInterval(function () {
+          var r = document.getElementById("root");
+          if (shown && r && r.childElementCount) {
+            document.getElementById("boot").className = "";
+            shown = false;
+          }
+        }, 700);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
+    <div id="boot"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

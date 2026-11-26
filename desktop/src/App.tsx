@@ -915,6 +915,13 @@ function ScreenView(props: ShellProps) {
   const [rotated, setRotated] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [fill,setFill]=useState(false);
+  /* Flipping the phone should stop showing bars: fit for portrait, fill
+     (cover) the moment the stream goes landscape. First frame never counts —
+     it would override the user's own Fit/Fill pick on every reconnect. */
+  const landRef = useRef<boolean|null>(null);
+  /* The frame's own shape, straight from the stream: a rotated phone sends
+     landscape bitmaps, and a hard-coded 9/20 box letterboxed them. */
+  const [dims,setDims]=useState({ w: 9, h: 20 });
   const [onTop,setOnTop]=useState(false);
   /* Samsung Flow parity: the Smart View control bar. DND mutes the phone's
      notification relay, screen capture writes the mirrored frame to disk,
@@ -1026,6 +1033,7 @@ function ScreenView(props: ShellProps) {
     const tick = async () => {
       if (stop) return;
       if (!readPreferences().screen) { setTimeout(tick, 250); return; }
+      let painted = false;
       try {
         const r = await fetch(`${FRAME_URL}?t=${Date.now()}`, { cache: "no-store" });
         if (r.ok) {
@@ -1046,15 +1054,20 @@ function ScreenView(props: ShellProps) {
             }
             const el = paintRef.current;
             if (el) {
+              const land = bmp.width > bmp.height;
+              if (landRef.current !== null && landRef.current !== land) setFill(land);
+              landRef.current = land;
               // Resize only when it actually changes: assigning width/height
               // every frame clears the canvas and reallocates its buffer.
               if (el.width !== bmp.width || el.height !== bmp.height) {
                 el.width = bmp.width;
                 el.height = bmp.height;
                 intrRef.current = { w: bmp.width, h: bmp.height };
+                // rotation changes the bitmap shape: refit the box once
+                setDims({ w: bmp.width, h: bmp.height });
               }
               const ctx = el.getContext("2d");
-              if (ctx) { ctx.drawImage(bmp, 0, 0); bmp.close(); }
+              if (ctx) { ctx.drawImage(bmp, 0, 0); bmp.close(); painted = true; }
             } else {
               bmp.close();
             }
@@ -1066,10 +1079,12 @@ function ScreenView(props: ShellProps) {
           }
         }
       } catch { /* server not up yet */ }
-      // The fetch+decode above is already the rate limiter; the old 16ms
-      // timer on top of it added a full poll period of dead time before the
-      // NEXT request went out.
-      setTimeout(tick, 0);
+      // Pace the poller. `setTimeout(tick, 0)` re-fetched and re-decoded a
+      // full JPEG back-to-back with no gap: sustained load that starves the
+      // WebView2 compositor, and the window repaints blank white. 30fps is
+      // past what the phone sends; idle backs off so a stalled link costs
+      // nothing.
+      setTimeout(tick, painted ? 33 : 120);
     };
     tick();
     const un2Promise = api.on<LinkState>("link_state", (e) => {
@@ -1342,6 +1357,12 @@ function ScreenView(props: ShellProps) {
         <div
           className={`screen-canvas interactive${rotated ? " rotated" : ""}`}
           ref={canvasRef}
+          style={{
+            "--ar": `${dims.w} / ${dims.h}`,
+            "--arr": dims.w / dims.h,
+            // Fill crops: the box takes the whole panel instead of the stream's shape.
+            ...(fill ? { width: "100%", height: "100%", aspectRatio: "auto" } : null),
+          } as React.CSSProperties}
           tabIndex={link.connected && streaming ? 0 : -1}
           onPointerDown={onDown}
           onPointerMove={onMove}
@@ -1357,15 +1378,15 @@ function ScreenView(props: ShellProps) {
         >
           {frame || frameArrived.current ? (
             <div className="tap-layer">
-              {/* A canvas has no object-fit: its bitmap stretches to the
-                  element box. contain = keep the intrinsic aspect and fit
-                  inside (max-*); fill = stretch to cover, the old crop. */}
+              {/* A canvas is a replaced element, so object-fit works on it:
+                  contain keeps the intrinsic aspect inside the box, cover
+                  fills the box and crops the overflow (the old "fill"). */}
               <canvas
                 ref={paintRef}
                 className="paint"
                 draggable={false}
                 style={fill
-                  ? { width: "100%", height: "100%" }
+                  ? { width: "100%", height: "100%", objectFit: "cover" }
                   : { maxWidth: "100%", maxHeight: "100%" }}
               />
             </div>

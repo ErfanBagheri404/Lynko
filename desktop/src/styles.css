@@ -971,25 +971,30 @@ input.field:focus {
   min-width: 0;
   height: 100%;
   align-self: stretch;
+  /* container units let the mirror box solve "fit inside the panel" in CSS:
+     the box is as wide as the panel or as tall as it, whichever binds first. */
+  container-type: size;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-card);
   background: var(--card);
   display: flex;
   justify-content: center;
+  align-items: center;
 }
 
 .screen-frame.lit { background: #000; }
 
 .screen-canvas {
-  aspect-ratio: 9 / 20;
-  height: 100%;
-  max-width: 100%;
+  /* --ar/--arr come from the live frame: a rotated phone sends landscape
+     bitmaps, so the box follows the stream instead of a fixed 9/20. */
+  aspect-ratio: var(--ar, 9 / 20);
+  width: min(100cqw, 100cqh * var(--arr, 0.45));
+  height: auto;
+  align-self: center;
   overflow: hidden;
   background: #000;
   position: relative;
 }
-
-.screen-frame.lit .screen-canvas { width: 100%; }
 
 /* Samsung Flow parity: favorites strip + picker inside the Screen view. */
 .fav-strip {
@@ -1084,7 +1089,7 @@ input.field:focus {
   margin: auto;
 }
 
-.screen-canvas.rotated { aspect-ratio: 20 / 9; height: auto; width: 100%; max-height: 100%; align-self: center; }
+.screen-canvas.rotated { aspect-ratio: 20 / 9; width: min(100cqw, 100cqh * 2.2222); height: auto; align-self: center; }
 
 .screen-canvas.interactive { cursor: default; }
 
@@ -1136,7 +1141,7 @@ input.field:focus {
   justify-content: center;
 }
 
-.rotated .screen-canvas { aspect-ratio: 20 / 9; }
+.rotated .screen-canvas { aspect-ratio: 20 / 9; --arr: 2.2222; }
 .rotated .screen-canvas img { transform: none; }
 
 /* ============================================================

@@ -32,6 +32,10 @@ uuid = { version = "1.20.0", features = ["v4"] }
 base64 = "0.23.1"
 anyhow = "1"
 
+# Renderer-crash recovery needs the WebView2 event interface wry already links.
+[target.'cfg(windows)'.dependencies]
+webview2-com = "0.38"
+
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
