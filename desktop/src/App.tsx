@@ -1029,6 +1029,10 @@ function ScreenView(props: ShellProps) {
     // mirror look delayed while taps felt instant.
     const FRAME_URL = "http://127.0.0.1:7919/frame.jpg";
     let lastSeq = -1;
+    // When the last NEW frame landed. A duplicate answer to a poll during a
+    // live stream is not idle time: backing off 120ms on it cut sampling to
+    // ~8fps whenever a fetch arrived between two phone frames.
+    let lastNew = 0;
     let stop = false;
     const tick = async () => {
       if (stop) return;
@@ -1040,6 +1044,7 @@ function ScreenView(props: ShellProps) {
           const seq = Number(r.headers.get("X-Frame-Seq") ?? "-1");
           if (seq !== lastSeq) {
             lastSeq = seq;
+            lastNew = Date.now();
             const blob = await r.blob();
             // createImageBitmap decodes OFF the main thread and resolves
             // async. createObjectURL + <img>.src made the WebView decode and
@@ -1084,7 +1089,8 @@ function ScreenView(props: ShellProps) {
       // WebView2 compositor, and the window repaints blank white. 30fps is
       // past what the phone sends; idle backs off so a stalled link costs
       // nothing.
-      setTimeout(tick, painted ? 33 : 120);
+      const live = Date.now() - lastNew < 1000;
+      setTimeout(tick, painted ? 33 : live ? 16 : 120);
     };
     tick();
     const un2Promise = api.on<LinkState>("link_state", (e) => {
@@ -1092,6 +1098,10 @@ function ScreenView(props: ShellProps) {
         frameArrived.current = false;
         setFrame(null);
         setStreaming(false);
+        // A reconnect may come back in the other orientation; forget the last
+        // shape so the fresh stream is not mistaken for a rotation the user
+        // asked to follow — that would override a manual Fit/Fill pick.
+        landRef.current = null;
       }
     });
     return () => {
@@ -1106,6 +1116,7 @@ function ScreenView(props: ShellProps) {
   const start = async () => {
     try {
       await api.invoke("screen_start");
+      landRef.current = null; // first frame of a new stream never flips Fit/Fill
       // Re-apply the saved quality preset on every fresh capture: the phone
       // resets to its 540p/q65 default on each pipeline build, so a preset
       // chosen last session would otherwise be lost on every start.
@@ -1122,6 +1133,7 @@ function ScreenView(props: ShellProps) {
     try {
       await api.invoke("screen_stop");
       setStreaming(false);
+      landRef.current = null;
       frameArrived.current = false;
       setFrame(null);
       toast(tr(lang, "desktop", "stream_stopped"), "info");
