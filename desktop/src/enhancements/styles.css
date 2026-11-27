@@ -155,40 +155,8 @@ html[data-motion=off] *,html[data-motion=off] *::before,html[data-motion=off] *:
   border-bottom: 1px solid var(--line-strong);
 }
 
-.files-kicker {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-family: var(--mono);
-  font-size: 10px;
-  line-height: 1;
-  letter-spacing: .14em;
-  text-transform: uppercase;
-  color: var(--ink1);
-}
-
-.files-kicker::after {
-  content: "";
-  width: 26px;
-  height: 1px;
-  background: var(--line-strong);
-}
-
-.files-kicker b {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 22px;
-  height: 17px;
-  padding: 0 4px;
-  border: 1px solid var(--signal-line);
-  color: var(--signal);
-  font-weight: 500;
-  letter-spacing: .04em;
-}
-
 .files-masthead h1 {
-  margin: 7px 0 3px;
+  margin: 0 0 3px;
   font-size: 30px;
   line-height: .95;
   font-weight: 700;
