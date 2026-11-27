@@ -111,15 +111,18 @@ fn sys32(tool: &str) -> String {
 }
 
 fn system32_dir() -> String {
-    let mut buf = [0u16; 260];
-    let n = unsafe {
-        windows_sys::Win32::System::SystemInformation::GetSystemDirectoryW(
-            buf.as_mut_ptr(),
-            buf.len() as u32,
-        )
-    };
-    if n > 0 && (n as usize) < buf.len() {
-        return String::from_utf16_lossy(&buf[..n as usize]);
+    #[cfg(windows)]
+    {
+        let mut buf = [0u16; 260];
+        let n = unsafe {
+            windows_sys::Win32::System::SystemInformation::GetSystemDirectoryW(
+                buf.as_mut_ptr(),
+                buf.len() as u32,
+            )
+        };
+        if n > 0 && (n as usize) < buf.len() {
+            return String::from_utf16_lossy(&buf[..n as usize]);
+        }
     }
     r"C:\Windows\System32".into()
 }
