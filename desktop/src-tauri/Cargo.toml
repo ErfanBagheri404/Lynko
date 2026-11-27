@@ -34,8 +34,10 @@ anyhow = "1"
 
 # GetSystemDirectoryW: System32 resolved by the OS, never from an inherited
 # SystemRoot (preflight spawns netsh/reg/powershell from it).
+# WebView2 event interface: renderer-crash recovery.
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_System_SystemInformation"] }
+webview2-com = "0.38"
 
 [features]
 default = ["custom-protocol"]

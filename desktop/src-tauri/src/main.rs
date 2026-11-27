@@ -280,10 +280,18 @@ fn load_pairs(app: &AppHandle) -> HashMap<String, Device> {
 }
 
 fn save_pairs(app: &AppHandle, paired: &HashMap<String, Device>) {
-    if let Ok(json) = serde_json::to_string_pretty(paired) {
-        let path = pairs_path(app);
-        let _ = std::fs::create_dir_all(path.parent().unwrap());
-        let _ = std::fs::write(path, json);
+    // Surface failures: silently losing the pairings file means the user has to
+    // re-enter the phone PIN and blames the pairing, not the disk.
+    use tauri::Emitter;
+    let path = pairs_path(app);
+    let result = serde_json::to_string_pretty(paired)
+        .map_err(|e| e.to_string())
+        .and_then(|json| {
+            std::fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
+            std::fs::write(&path, json).map_err(|e| e.to_string())
+        });
+    if let Err(e) = result {
+        let _ = app.emit("log", serde_json::json!({ "msg": format!("could not save pairings: {e}") }));
     }
 }
 
@@ -484,9 +492,24 @@ async fn run_link(
     use tauri::{Emitter, Manager};
 
     let url = format!("ws://{}:{}/link", ws_host(&device.address), LINK_PORT);
-    let ws_stream = match tokio_tungstenite::connect_async(&url).await {
-        Ok((s, _)) => s,
-        Err(e) => {
+    // A paired phone that went away keeps a cached address; the OS TCP dial
+    // can hang ~20s and the UI sits on "Connecting…" with no way out. Cap it.
+    let dial = tokio::time::timeout(
+        Duration::from_secs(8),
+        tokio_tungstenite::connect_async(&url),
+    )
+    .await;
+    let ws_stream = match dial {
+        Ok(Ok((s, _))) => s,
+
+        Err(_) => {
+            let _ = app.emit("log", serde_json::json!({ "msg": format!("link timed out: {}", device.address) }));
+            alive.store(false, Ordering::SeqCst);
+            let _ = app.emit("link_state", serde_json::json!({ "connected": false }));
+            spawn_reconnect(app.clone(), device.id.clone(), gen);
+            return;
+        }
+        Ok(Err(e)) => {
             let _ = app.emit("log", serde_json::json!({ "msg": format!("link failed: {e}") }));
             alive.store(false, Ordering::SeqCst);
             let _ = app.emit("link_state", serde_json::json!({ "connected": false }));
@@ -1939,6 +1962,37 @@ fn main() {
                     .unwrap()
                     .join("history.json"),
             );
+            // White-window guard. WebView2 can open before the dev server
+            // answers and then sit on about:blank forever — nothing retries
+            // it, so the window stays an empty white rectangle. Re-navigate
+            // until the page is no longer blank.
+            #[cfg(windows)]
+            if let Some(w) = handle.get_webview_window("main") {
+                install_webview_crash_recovery(&w);
+            }
+            if let Some(w) = handle.get_webview_window("main") {
+                let target = app.config().build.dev_url.clone();
+                std::thread::spawn(move || {
+                    for _ in 0..12 {
+                        std::thread::sleep(std::time::Duration::from_millis(1200));
+                        let blank = w
+                            .url()
+                            .map(|u| u.scheme() == "about")
+                            .unwrap_or(true);
+                        if !blank {
+                            return;
+                        }
+                        match &target {
+                            Some(u) => {
+                                let _ = w.navigate(u.clone());
+                            }
+                            None => {
+                                let _ = w.eval("location.reload()");
+                            }
+                        }
+                    }
+                });
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -1993,6 +2047,29 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running Lynko");
+}
+
+/// A WebView2 renderer that dies (OOM under sustained mirror decoding) leaves
+/// a blank white window: the page's own error guards are gone with it, so
+/// nothing in the frontend can react. Reload from the host side instead.
+#[cfg(windows)]
+fn install_webview_crash_recovery(w: &tauri::WebviewWindow) {
+    use webview2_com::ProcessFailedEventHandler;
+    let win = w.clone();
+    let _ = w.with_webview(move |p| {
+        let Ok(webview) = (unsafe { p.controller().CoreWebView2() }) else {
+            return;
+        };
+        let win = win.clone();
+        let handler = ProcessFailedEventHandler::create(Box::new(move |_, _| {
+            let _ = win.reload();
+            Ok(())
+        }));
+        let mut token = 0i64;
+        unsafe {
+            let _ = webview.add_ProcessFailed(&handler, &mut token);
+        }
+    });
 }
 
 #[cfg(test)]

@@ -2390,6 +2390,7 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "uuid",
+ "webview2-com",
  "whoami",
  "windows-sys 0.59.0",
 ]
