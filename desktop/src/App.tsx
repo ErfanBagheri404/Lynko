@@ -1446,7 +1446,6 @@ function FilesView(props: ShellProps) {
     <div className="view files-view">
       <header className="files-masthead">
         <div className="files-masthead-copy">
-          <span className="files-kicker" aria-hidden="true"><b>03</b></span>
           <h1>{T("files_title")}</h1>
           <p>{T("files_sub")}</p>
         </div>
