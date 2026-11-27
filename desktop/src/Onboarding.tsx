@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Lang, t as tr } from "./locales";
 import { api } from "./App";
 import type { Preferences } from "./enhancements/hooks";
@@ -21,14 +21,25 @@ export default function Onboarding({ lang, prefs, updatePrefs, toast, onDone }: 
   const [autostart, setAutostart] = useState(false);
   const [busy, setBusy] = useState<string[]>([]);
 
-  const apply = (s: Preflight | null | undefined) => {
-    if (!s) return;
+  // Only the newest read wins: a focus re-read can resolve after a toggle and
+  // would otherwise restore the pre-toggle state on screen.
+  const seq = useRef(0);
+  const apply = (n: number, s: Preflight | null | undefined) => {
+    if (n !== seq.current || !s) return;
     if (typeof s.firewall === "boolean") setFirewall(s.firewall);
     if (typeof s.autostart === "boolean") setAutostart(s.autostart);
   };
 
   useEffect(() => {
-    api.invoke<Preflight>("preflight_state").then(apply).catch(fail);
+    const read = () => {
+      const n = ++seq.current;
+      api.invoke<Preflight>("preflight_state").then((s) => apply(n, s)).catch(fail);
+    };
+    read();
+    // Windows' own firewall / startup screens can be changed while the wizard
+    // sits open; re-read on focus so the toggles are not stale (BUG-003).
+    window.addEventListener("focus", read);
+    return () => window.removeEventListener("focus", read);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -39,8 +50,9 @@ export default function Onboarding({ lang, prefs, updatePrefs, toast, onDone }: 
 
   const turn = async (id: string, cmd: string, on: boolean) => {
     lock(id);
+    const n = ++seq.current;
     try {
-      apply(await api.invoke<Preflight>(cmd, { on }));
+      apply(n, await api.invoke<Preflight>(cmd, { on }));
     } catch {
       fail();
     } finally {

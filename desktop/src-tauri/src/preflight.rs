@@ -1,11 +1,15 @@
 //! Windows preflight: report/set the "Lynko" firewall allow rule and run-at-login,
 //! so first-run onboarding can enable both before pairing.
 //!
-//! Uses only std::process (netsh / reg / powershell) — no extra crates.
+//! Firewall state comes from PowerShell's structured NetSecurity cmdlets (no
+//! localized netsh text; the rule is matched by program path + enabled +
+//! inbound + allow, so a renamed, disabled, blocking or stale-path rule reads
+//! as off). Elevation runs an `-EncodedCommand`, so no path or rule name is
+//! ever interpolated into a command line.
 use serde::Serialize;
 use std::process::Command;
 
-/// HKCU autostart value we own; also the firewall rule name.
+/// HKCU autostart value we own; also the firewall rule display name.
 const VALUE_NAME: &str = "Lynko";
 const RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
 
@@ -21,34 +25,28 @@ pub fn preflight_state() -> Result<PreflightState, String> {
 }
 
 /// Add (or remove) the inbound allow rule for this exe. Idempotent: skips the
-/// elevation prompt when the rule already matches the request.
+/// elevation prompt when the current state already matches the request.
 #[tauri::command]
 pub fn set_firewall(on: bool) -> Result<PreflightState, String> {
-    let have = firewall_rule()?;
-    if on && !have {
+    let rules = firewall_rules()?;
+    if on && rules.is_empty() {
         let exe = current_exe()?;
-        elevated_netsh(&[
-            "advfirewall".into(),
-            "firewall".into(),
-            "add".into(),
-            "rule".into(),
-            format!("name={VALUE_NAME}"),
-            "dir=in".into(),
-            "action=allow".into(),
-            // Spec prefers private/domain over `any`; ponytail: a machine whose
-            // active profile is Public ignores this rule — widen to
-            // profile=private,domain,public if Public-LAN traffic gets blocked.
-            "profile=private,domain".into(),
-            format!("program=\"{exe}\""),
-        ])?;
-    } else if !on && have {
-        elevated_netsh(&[
-            "advfirewall".into(),
-            "firewall".into(),
-            "delete".into(),
-            "rule".into(),
-            format!("name={VALUE_NAME}"),
-        ])?;
+        // Spec prefers private/domain over `any`; ponytail: a machine whose
+        // active profile is Public ignores this rule — widen the -Profile list
+        // if Public-LAN traffic gets blocked.
+        elevate(&format!(
+            "New-NetFirewallRule -DisplayName {} -Direction Inbound -Action Allow \
+             -Program {} -Profile Private,Domain | Out-Null",
+            ps_str(VALUE_NAME),
+            ps_str(&exe)
+        ))?;
+    } else if !on && !rules.is_empty() {
+        // Remove every rule that matches this exe, whatever it is called.
+        let script = rules
+            .iter()
+            .map(|n| format!("Remove-NetFirewallRule -Name {};", ps_str(n)))
+            .collect::<String>();
+        elevate(&script)?;
     }
     let state = read_state()?;
     if state.firewall != on {
@@ -68,7 +66,7 @@ pub fn set_autostart(on: bool) -> Result<PreflightState, String> {
         let exe = current_exe()?;
         // Quoted so paths with spaces survive CreateProcess at login.
         run(
-            "reg",
+            &sys32("reg"),
             &[
                 "add", RUN_KEY, "/v", VALUE_NAME, "/t", "REG_SZ", "/d",
                 &format!("\"{exe}\""), "/f",
@@ -77,7 +75,7 @@ pub fn set_autostart(on: bool) -> Result<PreflightState, String> {
     } else {
         // reg delete exits 1 when the value is already gone — ignore the exit
         // code; the re-read below decides success (keeps the command repeatable).
-        run("reg", &["delete", RUN_KEY, "/v", VALUE_NAME, "/f"])?;
+        run(&sys32("reg"), &["delete", RUN_KEY, "/v", VALUE_NAME, "/f"])?;
     }
     let state = read_state()?;
     if state.autostart != on {
@@ -94,7 +92,7 @@ pub fn set_autostart(on: bool) -> Result<PreflightState, String> {
 
 fn read_state() -> Result<PreflightState, String> {
     Ok(PreflightState {
-        firewall: firewall_rule()?,
+        firewall: !firewall_rules()?.is_empty(),
         autostart: autostart_value()?,
     })
 }
@@ -105,31 +103,75 @@ fn current_exe() -> Result<String, String> {
         .map_err(|e| format!("cannot resolve current exe: {e}"))
 }
 
-/// `netsh advfirewall firewall show rule name=Lynko` exits 0 iff at least one
-/// rule matched (verified: 0 with rules present, 1 + "No rules match the
-/// specified criteria." when absent). Non-English Windows translates that
-/// message, so the exit code is the signal and stdout only confirms the name.
-fn firewall_rule() -> Result<bool, String> {
-    let out = Command::new("netsh")
-        .args(["advfirewall", "firewall", "show", "rule", "name=Lynko"])
-        .output()
-        .map_err(|e| format!("netsh failed: {e}"))?;
-    if out.status.success() {
-        return Ok(String::from_utf8_lossy(&out.stdout).contains(VALUE_NAME));
-    }
-    // ponytail: a netsh failure (e.g. service down) reads as "not enabled";
-    // set_firewall(true) surfaces the real error on the next attempt.
-    Ok(false)
+/// System32 from the OS, not from an inherited `SystemRoot` (which a launcher
+/// could point anywhere). A packaged GUI process inherits PATH from whatever
+/// launched it, so tools are always called by absolute path (issue #29, BUG-003).
+fn sys32(tool: &str) -> String {
+    format!(r"{}\{tool}.exe", system32_dir())
 }
 
-/// `reg query ... /v Lynko` exits 0 iff the value exists (verified 1 +
-/// "ERROR: The system was unable to find..." when absent).
+fn system32_dir() -> String {
+    let mut buf = [0u16; 260];
+    let n = unsafe {
+        windows_sys::Win32::System::SystemInformation::GetSystemDirectoryW(
+            buf.as_mut_ptr(),
+            buf.len() as u32,
+        )
+    };
+    if n > 0 && (n as usize) < buf.len() {
+        return String::from_utf16_lossy(&buf[..n as usize]);
+    }
+    r"C:\Windows\System32".into()
+}
+
+fn powershell() -> String {
+    sys32(r"WindowsPowerShell\v1.0\powershell")
+}
+
+/// Enabled inbound allow rules whose program is this exe — by name, so a
+/// disable removes them even when they were renamed.
+fn firewall_rules() -> Result<Vec<String>, String> {
+    const QUERY: &str = r#"$ErrorActionPreference='Stop'
+Get-NetFirewallApplicationFilter | Where-Object { $_.Program -ieq $env:LYNKO_EXE } |
+  Get-NetFirewallRule |
+  Where-Object { $_.Enabled -eq 'True' -and $_.Direction -eq 'Inbound' -and $_.Action -eq 'Allow' } |
+  ForEach-Object { $_.Name }"#;
+    let out = Command::new(powershell())
+        .args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", QUERY])
+        .env("LYNKO_EXE", current_exe()?)
+        .output()
+        .map_err(|e| format!("firewall query failed: {e}"))?;
+    // A service/tool failure is an error, not "the rule is off".
+    if !out.status.success() {
+        return Err(format!(
+            "firewall query failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(str::to_owned)
+        .collect())
+}
+
+/// True only when the Run value exists *and* points at this executable, so a
+/// moved/reinstalled install reads as off instead of enabled.
 fn autostart_value() -> Result<bool, String> {
-    let out = Command::new("reg")
+    let out = Command::new(sys32("reg"))
         .args(["query", RUN_KEY, "/v", VALUE_NAME])
         .output()
         .map_err(|e| format!("reg failed: {e}"))?;
-    Ok(out.status.success())
+    if !out.status.success() {
+        return Ok(false);
+    }
+    let text = String::from_utf8_lossy(&out.stdout).to_lowercase();
+    let Some(idx) = text.find("reg_sz") else {
+        return Ok(false);
+    };
+    let data = text[idx + "reg_sz".len()..].trim().trim_matches('"').trim();
+    Ok(data == current_exe()?.to_lowercase())
 }
 
 /// Spawn a helper and ignore its exit code — callers re-read real state instead
@@ -142,25 +184,30 @@ fn run(cmd: &str, args: &[&str]) -> Result<(), String> {
     Ok(())
 }
 
-/// Run netsh elevated via UAC. Returns Err("elevation declined") when the user
-/// rejects the prompt (Start-Process throws, caught by the script's catch
-/// block, which prints ELEVATION_DECLINED — same catch path verified in shell).
-fn elevated_netsh(args: &[String]) -> Result<(), String> {
-    // PowerShell single-quoted elements; Start-Process joins -ArgumentList
-    // array items with spaces and does NOT re-quote them, so the program path
-    // carries its own double quotes (netsh parses those itself).
-    let list = args
-        .iter()
-        .map(|a| format!("'{}'", a.replace('\'', "''")))
-        .collect::<Vec<_>>()
-        .join(",");
-    let script = format!(
-        "try {{ $p = Start-Process -FilePath netsh -ArgumentList @({list}) \
+/// PowerShell single-quoted literal: only `'` needs escaping (doubled).
+fn ps_str(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "''"))
+}
+
+/// Run a PowerShell snippet elevated via UAC. The snippet travels as base64
+/// (UTF-16LE, `-EncodedCommand`), so paths and rule names cannot break out of
+/// the command line. Err("elevation declined") when the user rejects the prompt.
+fn elevate(script: &str) -> Result<(), String> {
+    use base64::Engine;
+    let inner: Vec<u8> = format!("$ErrorActionPreference='Stop'\n{script}")
+        .encode_utf16()
+        .flat_map(u16::to_le_bytes)
+        .collect();
+    let enc = base64::engine::general_purpose::STANDARD.encode(inner);
+    let outer = format!(
+        "try {{ $p = Start-Process -FilePath {} -ArgumentList \
+         @('-NoProfile','-NonInteractive','-WindowStyle','Hidden','-EncodedCommand','{enc}') \
          -Verb RunAs -Wait -PassThru -ErrorAction Stop; exit $p.ExitCode }} \
-         catch {{ Write-Output 'ELEVATION_DECLINED'; exit 1 }}"
+         catch {{ Write-Output 'ELEVATION_DECLINED'; exit 1 }}",
+        ps_str(&powershell())
     );
-    let out = Command::new("powershell")
-        .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &script])
+    let out = Command::new(powershell())
+        .args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", &outer])
         .output()
         .map_err(|e| format!("powershell failed: {e}"))?;
     if String::from_utf8_lossy(&out.stdout).contains("ELEVATION_DECLINED") {
@@ -173,4 +220,18 @@ fn elevated_netsh(args: &[String]) -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ps_str;
+
+    #[test]
+    fn ps_str_escapes_quotes() {
+        assert_eq!(
+            ps_str(r"C:\Program Files\Lynko\lynko.exe"),
+            r"'C:\Program Files\Lynko\lynko.exe'"
+        );
+        assert_eq!(ps_str("it's"), r"'it''s'");
+    }
 }

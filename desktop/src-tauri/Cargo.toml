@@ -32,6 +32,11 @@ uuid = { version = "1.20.0", features = ["v4"] }
 base64 = "0.23.1"
 anyhow = "1"
 
+# GetSystemDirectoryW: System32 resolved by the OS, never from an inherited
+# SystemRoot (preflight spawns netsh/reg/powershell from it).
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_System_SystemInformation"] }
+
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]

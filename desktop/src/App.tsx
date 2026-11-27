@@ -217,6 +217,9 @@ export default function App() {
   const [link, setLink] = useState<LinkState>({ connected: false });
   const [battery, setBattery] = useState<BatteryState | null>(null);
   const [clipItems, setClipItems] = useState<ClipItem[]>([]);
+  // Status-bar version comes from the build (Cargo.toml), never a literal.
+  const [appVer, setAppVer] = useState("");
+  useEffect(() => { api.invoke<string>("app_version").then(setAppVer).catch(() => {}); }, []);
   const {prefs, updatePrefs} = usePreferences();
   const prefsLangRef = useRef(lang);
   prefsLangRef.current = lang;
@@ -547,7 +550,7 @@ export default function App() {
     <div className={link.connected ? "app live" : "app"}>
       <Shell
         view={view} setView={setView}
-        lang={lang} setLang={setLang}
+        lang={lang} setLang={setLang} ver={appVer}
         devices={devices}
         link={link} battery={battery}
         clipItems={clipItems} setClipItems={setClipItems}
@@ -606,10 +609,11 @@ interface ShellProps {
   /** Clear a mirrored notification locally + on the phone (dismiss-sync). */
   dismissNote: (n: NoteItem) => void;
   onboarding: boolean; setOnboarding: (v: boolean) => void;
+  ver: string;
 }
 
 function Shell(props: ShellProps) {
-  const { view, setView, lang, devices, link, battery, connectedDevice, notes, screenFps } = props;
+  const { view, setView, lang, devices, link, battery, connectedDevice, notes, screenFps, ver } = props;
   const T = (k: string) => tr(lang, "desktop", k);
 
   return (
@@ -685,7 +689,7 @@ function Shell(props: ShellProps) {
         {link.connected && link.mirror && screenFps > 0 && (
           <span className="sp">{screenFps}fps</span>
         )}
-        <span className="sp">v0.1.0</span>
+        {ver && <span className="sp">v{ver}</span>}
       </footer>
     </div>
   );
@@ -1442,7 +1446,6 @@ function FilesView(props: ShellProps) {
     <div className="view files-view">
       <header className="files-masthead">
         <div className="files-masthead-copy">
-          <span className="files-kicker" aria-hidden="true"><b>03</b></span>
           <h1>{T("files_title")}</h1>
           <p>{T("files_sub")}</p>
         </div>
